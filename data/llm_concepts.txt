@@ -1,0 +1,3 @@
+Large Language Models (LLMs) are neural networks trained on vast amounts of text to understand and generate human language. They use the transformer architecture, which relies on self-attention to process sequences of tokens and capture long-range dependencies.
+
+Key concepts include prompt engineering (crafting inputs to get desired outputs), context windows (the amount of text a model can consider at once), and fine-tuning (adapting a pre-trained model to specific tasks). RAG (Retrieval-Augmented Generation) combines retrieval of relevant documents with generation to ground model responses in external knowledge. Hallucination refers to when LLMs produce plausible-sounding but incorrect or fabricated information.

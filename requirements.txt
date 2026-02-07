@@ -1,0 +1,5 @@
+openai
+langchain
+llama-index
+chromadb
+python-dotenv
