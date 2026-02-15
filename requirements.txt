@@ -3,3 +3,5 @@ langchain
 llama-index
 chromadb
 python-dotenv
+faiss-cpu
+numpy
