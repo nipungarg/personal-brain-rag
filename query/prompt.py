@@ -1,3 +1,5 @@
+"""RAG prompt building and response parsing: format context, build_prompt, parse_response (answer + SOURCES line)."""
+
 from typing import Dict, List, Union
 
 

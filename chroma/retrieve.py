@@ -12,12 +12,13 @@ def get_relevant_chunks(
     query: str,
     n_results: int = 3,
     max_distance: float = RELEVANCE_MAX_DISTANCE,
+    collection_name: str | None = None,
 ) -> list[dict]:
     """
     Return top-n chunks as list of dicts (source, chunk_index, id, text) within relevance threshold.
-    Each dict has keys: source, chunk_index, id, text (for query.prompt.build_prompt).
+    collection_name: if None, use default "documents"; else use that collection (e.g. vault_small).
     """
-    collection = get_collection()
+    collection = get_collection(collection_name or "documents")
     results = collection.query(
         query_embeddings=[embed_query(query)],
         n_results=n_results,
@@ -42,7 +43,14 @@ def get_relevant_chunks(
     return chunks
 
 
-def get_relevant_context(query: str, n_results: int = 3, max_distance: float = RELEVANCE_MAX_DISTANCE) -> str:
+def get_relevant_context(
+    query: str,
+    n_results: int = 3,
+    max_distance: float = RELEVANCE_MAX_DISTANCE,
+    collection_name: str | None = None,
+) -> str:
     """Return concatenated top-n document chunks for the query, or empty string if no result is relevant."""
-    chunks = get_relevant_chunks(query, n_results=n_results, max_distance=max_distance)
+    chunks = get_relevant_chunks(
+        query, n_results=n_results, max_distance=max_distance, collection_name=collection_name
+    )
     return "\n---\n".join(c["text"] for c in chunks) if chunks else ""

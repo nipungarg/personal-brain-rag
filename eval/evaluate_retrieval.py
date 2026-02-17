@@ -1,7 +1,10 @@
-"""Retrieval evaluation for chroma, query (in-memory), and faiss backends."""
+"""Retrieval evaluation for chroma, query (in-memory), and faiss backends.
+
+Only in-domain questions (expected_source set) are evaluated; out-of-domain are skipped.
+"""
 
 import argparse
-import json
+import statistics
 import time
 from pathlib import Path
 
@@ -10,57 +13,83 @@ ROOT = Path(__file__).resolve().parent.parent
 from ingest.embedding import embed_query
 from utils.logger import log_event
 
+from .common import load_questions, check_hit
 
 TOP_K = 4
-# Only count results within this distance as "retrieved" (matches chroma/faiss retrieve threshold).
-RELEVANCE_MAX_DISTANCE = 1.5
+RELEVANCE_MAX_DISTANCE = 1.5  # Max distance for a result to count as "retrieved" (chroma/faiss).
 
 
-def load_questions() -> list[dict]:
-    path = ROOT / "eval" / "questions.json"
-    with open(path, "r") as f:
-        return json.load(f)
+def _sources_from_results(results: list[dict]) -> list[str]:
+    """Unique source filenames from results."""
+    return list({r["source"] for r in results})
 
 
-def _check_hit(retrieved_sources: list[str], expected_source) -> bool:
-    """
-    True if retrieval matches expectation.
-    - In-domain (expected_source set): at least one expected source in retrieved_sources.
-    - Out-of-domain (expected_source None): hit iff retrieved_sources is empty (no relevant docs).
-    """
-    if expected_source is None:
-        return not (retrieved_sources or [])
-    if isinstance(expected_source, list):
-        return any(exp in retrieved_sources for exp in expected_source)
-    return expected_source in retrieved_sources
-
-
-def _log_result(backend: str, question: str, results: list[dict], hit: bool, elapsed: float):
-    """Log one question's evaluation with rank, score, chunk_id, text_snippet, source per result."""
+def _log_retrieval(backend: str, question: str, results: list[dict], hit: bool, elapsed: float) -> None:
+    """Log one question's retrieval eval to run_log.jsonl."""
     log_event("retrieval_eval", {
         "backend": backend,
         "question": question,
         "results": results,
-        "retrieved_sources": list({r["source"] for r in results}),
+        "retrieved_sources": _sources_from_results(results),
         "hit": hit,
         "time_sec": round(elapsed, 4),
     })
 
 
-def evaluate_chroma():
-    """Evaluate retrieval using ChromaDB backend."""
-    from chroma.client import get_collection
-
-    collection = get_collection()
+def _run_retrieval_eval(
+    backend: str,
+    title: str,
+    get_results_fn,
+    apply_threshold_fn=None,
+) -> None:
+    """
+    Generic retrieval eval loop: for each in-domain question, call get_results_fn(question)
+    -> (results, elapsed), optionally apply threshold, compute hit, print and log.
+    apply_threshold_fn: if set, applied to results before computing sources (chroma/faiss use distance threshold).
+    """
     questions = load_questions()
-    total = hits = 0
+    hits = total = 0
+    elapsed_times: list[float] = []
 
-    print("\n=== RETRIEVAL EVALUATION (Chroma) ===\n")
+    print(f"\n=== RETRIEVAL EVALUATION ({title}) ===\n")
 
     for item in questions:
         question = item["question"]
         expected_source = item.get("expected_source")
+        if expected_source is None:
+            continue
 
+        results, elapsed = get_results_fn(question)
+        elapsed_times.append(elapsed)
+        if apply_threshold_fn:
+            results = apply_threshold_fn(results)
+        retrieved_sources = _sources_from_results(results)
+        hit = check_hit(retrieved_sources, expected_source)
+        if hit:
+            hits += 1
+        total += 1
+
+        print(f"Q: {question}")
+        print(f"Retrieved sources: {retrieved_sources}")
+        print(f"Hit: {hit}")
+        print(f"Time: {elapsed:.3f}s\n")
+        _log_retrieval(backend, question, results, hit, elapsed)
+
+    recall = hits / total if total else 0.0
+    avg_time = statistics.mean(elapsed_times) if elapsed_times else 0.0
+    median_time = statistics.median(elapsed_times) if elapsed_times else 0.0
+    print(f"=== RESULTS ({title}) ===")
+    print(f"Recall@{TOP_K}: {recall:.2%} ({hits}/{total})")
+    print(f"Time (avg): {avg_time:.3f}s  |  Time (median): {median_time:.3f}s")
+
+
+def _chroma_get_results(collection_name: str):
+    """Return (results, elapsed) getter for Chroma backend."""
+    from chroma.client import get_collection
+
+    collection = get_collection(collection_name or "documents")
+
+    def get_results(question: str):
         start = time.time()
         raw = collection.query(
             query_embeddings=[embed_query(question)],
@@ -68,158 +97,115 @@ def evaluate_chroma():
             include=["documents", "metadatas", "distances"],
         )
         elapsed = time.time() - start
-
         ids = raw["ids"][0]
         documents = raw["documents"][0]
         metadatas = raw["metadatas"][0]
-        distances = raw.get("distances", [[]])[0]
-        if not distances and ids:
-            distances = [0.0] * len(ids)
-
-        results = []
-        for r, (chunk_id, doc, meta, score) in enumerate(zip(ids, documents, metadatas, distances), 1):
-            results.append({
+        distances = raw.get("distances", [[]])[0] or [0.0] * len(ids)
+        results = [
+            {
                 "rank": r,
                 "score": float(score),
                 "chunk_id": chunk_id,
                 "text_snippet": (doc[:200] + "..." if len(doc) > 200 else doc) if doc else "",
                 "source": meta.get("filename", ""),
-            })
-        # Apply same relevance threshold as chroma.retrieve: only results below max distance count.
-        results = [r for r in results if r["score"] <= RELEVANCE_MAX_DISTANCE]
+            }
+            for r, (chunk_id, doc, meta, score) in enumerate(zip(ids, documents, metadatas, distances), 1)
+        ]
+        return results, elapsed
 
-        retrieved_sources = list({r["source"] for r in results})
-        hit = _check_hit(retrieved_sources, expected_source)
-        if hit:
-            hits += 1
-        total += 1
-
-        print(f"Q: {question}")
-        print(f"Retrieved sources: {retrieved_sources}")
-        print(f"Hit: {hit}")
-        print(f"Time: {elapsed:.3f}s\n")
-
-        _log_result("chroma", question, results, hit, elapsed)
-
-    recall = hits / total if total else 0.0
-    print("=== RESULTS (Chroma) ===")
-    print(f"Recall@{TOP_K}: {recall:.2%} ({hits}/{total})")
+    return get_results
 
 
-def evaluate_query():
-    """Evaluate retrieval using in-memory query backend (cosine similarity)."""
+def _query_get_results():
+    """Return (results, elapsed) getter for in-memory query backend."""
     from query.retrieve import load_all_chunks, retrieve_top_k_cross_corpus
 
     all_chunks = load_all_chunks()
     chunk_id_to_source = {c["chunk_id"]: c["source"] for c in all_chunks}
-    questions = load_questions()
-    total = hits = 0
 
-    print("\n=== RETRIEVAL EVALUATION (Query) ===\n")
-
-    for item in questions:
-        question = item["question"]
-        expected_source = item.get("expected_source")
-
+    def get_results(question: str):
         start = time.time()
         retrieved = retrieve_top_k_cross_corpus(embed_query(question), all_chunks, k=TOP_K)
         elapsed = time.time() - start
-
-        results = []
-        for r, (score, chunk_id, preview) in enumerate(retrieved, 1):
-            results.append({
-                "rank": r,
+        results = [
+            {
+                "rank": rank,
                 "score": float(score),
                 "chunk_id": chunk_id,
                 "text_snippet": preview,
                 "source": chunk_id_to_source.get(chunk_id, ""),
-            })
+            }
+            for rank, (score, chunk_id, preview) in enumerate(retrieved, 1)
+        ]
+        return results, elapsed
 
-        retrieved_sources = list({r["source"] for r in results})
-        hit = _check_hit(retrieved_sources, expected_source)
-        if hit:
-            hits += 1
-        total += 1
-
-        print(f"Q: {question}")
-        print(f"Retrieved sources: {retrieved_sources}")
-        print(f"Hit: {hit}")
-        print(f"Time: {elapsed:.3f}s\n")
-
-        _log_result("query", question, results, hit, elapsed)
-
-    recall = hits / total if total else 0.0
-    print("=== RESULTS (Query) ===")
-    print(f"Recall@{TOP_K}: {recall:.2%} ({hits}/{total})")
+    return get_results
 
 
-def evaluate_faiss():
-    """Evaluate retrieval using FAISS backend."""
+def _faiss_get_results():
+    """Return (results, elapsed) getter for FAISS backend."""
     from faiss_rag.client import load_index_and_metadata
     from faiss_rag.store import search_index
 
     index, chunks, sources = load_index_and_metadata()
-    questions = load_questions()
-    total = hits = 0
 
-    print("\n=== RETRIEVAL EVALUATION (FAISS) ===\n")
-
-    for item in questions:
-        question = item["question"]
-        expected_source = item.get("expected_source")
-
+    def get_results(question: str):
         start = time.time()
         query_emb = embed_query(question)
         distances, indices = search_index(index, query_emb, k=TOP_K)
         elapsed = time.time() - start
-
         results = []
-        for r, (idx, dist) in enumerate(zip(indices, distances), 1):
+        for rank, (idx, dist) in enumerate(zip(indices, distances), 1):
             idx = int(idx)
             src = sources[idx]
-            local_i = sources[: idx + 1].count(src) - 1
-            chunk_id = f"{Path(src).stem}_{local_i}"
+            chunk_id = f"{Path(src).stem}_{sources[: idx + 1].count(src) - 1}"
             text = chunks[idx] if idx < len(chunks) else ""
-            text_snippet = text[:200] + "..." if len(text) > 200 else text
             results.append({
-                "rank": r,
+                "rank": rank,
                 "score": float(dist),
                 "chunk_id": chunk_id,
-                "text_snippet": text_snippet,
+                "text_snippet": text[:200] + "..." if len(text) > 200 else text,
                 "source": src,
             })
-        # Apply same relevance threshold as faiss_rag.retrieve.
-        results = [r for r in results if r["score"] <= RELEVANCE_MAX_DISTANCE]
+        return results, elapsed
 
-        retrieved_sources = list({r["source"] for r in results})
-        hit = _check_hit(retrieved_sources, expected_source)
-        if hit:
-            hits += 1
-        total += 1
-
-        print(f"Q: {question}")
-        print(f"Retrieved sources: {retrieved_sources}")
-        print(f"Hit: {hit}")
-        print(f"Time: {elapsed:.3f}s\n")
-
-        _log_result("faiss", question, results, hit, elapsed)
-
-    recall = hits / total if total else 0.0
-    print("=== RESULTS (FAISS) ===")
-    print(f"Recall@{TOP_K}: {recall:.2%} ({hits}/{total})")
+    return get_results
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Evaluate retrieval for a backend.")
-    parser.add_argument(
-        "backend",
-        choices=["chroma", "query", "faiss"],
-        help="Backend to evaluate: chroma, query, or faiss",
+def _apply_relevance_threshold(results: list[dict]) -> list[dict]:
+    """Keep only results with score <= RELEVANCE_MAX_DISTANCE (chroma/faiss)."""
+    return [r for r in results if r["score"] <= RELEVANCE_MAX_DISTANCE]
+
+
+def evaluate_chroma(collection_name: str | None = None) -> None:
+    """Evaluate retrieval for Chroma. collection_name: default 'documents'; use e.g. vault_small for sweep."""
+    title = f"Chroma ({collection_name or 'documents'})"
+    _run_retrieval_eval(
+        "chroma",
+        title,
+        _chroma_get_results(collection_name),
+        apply_threshold_fn=_apply_relevance_threshold,
     )
+
+
+def evaluate_query() -> None:
+    """Evaluate retrieval for in-memory query backend (cosine similarity)."""
+    _run_retrieval_eval("query", "Query", _query_get_results())
+
+
+def evaluate_faiss() -> None:
+    """Evaluate retrieval for FAISS backend."""
+    _run_retrieval_eval("faiss", "FAISS", _faiss_get_results(), apply_threshold_fn=_apply_relevance_threshold)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate retrieval for a backend.")
+    parser.add_argument("backend", choices=["chroma", "query", "faiss"], help="Backend to evaluate.")
+    parser.add_argument("--collection", default=None, help="Chroma collection name (for backend=chroma sweep).")
     args = parser.parse_args()
 
     if args.backend == "chroma":
-        evaluate_chroma()
+        evaluate_chroma(collection_name=args.collection)
     elif args.backend == "query":
         evaluate_query()
     else:

@@ -1,4 +1,7 @@
-"""ChromaDB client and collection access."""
+"""ChromaDB client and collection access.
+
+ROOT: project root. CHROMA_PATH: persistent DB directory. get_collection(name): default name "documents".
+"""
 
 import chromadb
 from pathlib import Path

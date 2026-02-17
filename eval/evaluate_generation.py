@@ -1,43 +1,23 @@
-"""Generation evaluation for chroma, query (in-memory), and faiss backends.
+"""Generation evaluation for chroma, query, and faiss backends.
 
-Runs each backend's generate_answer(), checks that returned sources match
-expected_source (in-domain: at least one expected source cited; out-of-domain:
-no sources cited). Logs question, retrieved_sources, hit, time, and answer snippet.
+Runs each backend's generate_answer(), checks that returned sources match expected_source
+(in-domain: at least one expected source cited; out-of-domain: no sources cited).
+Logs question, retrieved_sources, hit, time, and answer snippet.
 """
 
 import argparse
-import json
+import statistics
 import time
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
 
 from utils.logger import log_event
 
+from .common import load_questions, check_hit
 
 TOP_K = 4
+EVAL_TEMPERATURE = 0.0  # Deterministic recall for comparable runs across collections.
 
 
-def load_questions() -> list[dict]:
-    """Load eval questions from eval/questions.json."""
-    with open(ROOT / "eval" / "questions.json", "r") as f:
-        return json.load(f)
-
-
-def _check_hit(returned_sources: list[str], expected_source) -> bool:
-    """
-    True if generation output matches expectation.
-    - In-domain (expected_source set): at least one expected source in returned_sources.
-    - Out-of-domain (expected_source None): hit iff returned_sources is empty.
-    """
-    if expected_source is None:
-        return not (returned_sources or [])
-    if isinstance(expected_source, list):
-        return any(exp in returned_sources for exp in expected_source)
-    return expected_source in returned_sources
-
-
-def _log_result(
+def _log_generation(
     backend: str,
     question: str,
     retrieved_sources: list[str],
@@ -45,38 +25,41 @@ def _log_result(
     elapsed: float,
     answer_snippet: str = "",
 ) -> None:
-    """Log one question's generation eval."""
+    """Log one question's generation eval to run_log.jsonl."""
+    snippet = answer_snippet[:200] + "..." if len(answer_snippet) > 200 else answer_snippet
     log_event("generation_eval", {
         "backend": backend,
         "question": question,
         "retrieved_sources": retrieved_sources,
         "hit": hit,
         "time_sec": round(elapsed, 4),
-        "answer_snippet": answer_snippet[:200] + "..." if len(answer_snippet) > 200 else answer_snippet,
+        "answer_snippet": snippet,
     })
 
 
-def evaluate_chroma() -> None:
-    """Evaluate generation using ChromaDB backend."""
-    from chroma.generate import generate_answer
-
+def _run_generation_eval(backend: str, title: str, generate_fn) -> None:
+    """
+    Generic generation eval loop: for each question, call generate_fn(question)
+    -> {answer, sources}, compute hit from sources vs expected_source, print and log.
+    """
     questions = load_questions()
-    total = hits = 0
+    hits = total = 0
+    elapsed_times: list[float] = []
 
-    print("\n=== GENERATION EVALUATION (Chroma) ===\n")
+    print(f"\n=== GENERATION EVALUATION ({title}) ===\n")
 
     for item in questions:
         question = item["question"]
         expected_source = item.get("expected_source")
 
         start = time.time()
-        out = generate_answer(question, n_results=TOP_K)
+        out = generate_fn(question)
         elapsed = time.time() - start
+        elapsed_times.append(elapsed)
 
         returned_sources = out.get("sources", [])
         answer = out.get("answer", "")
-        hit = _check_hit(returned_sources, expected_source)
-
+        hit = check_hit(returned_sources, expected_source)
         if hit:
             hits += 1
         total += 1
@@ -85,99 +68,56 @@ def evaluate_chroma() -> None:
         print(f"Retrieved sources (from LLM): {returned_sources}")
         print(f"Hit: {hit}")
         print(f"Time: {elapsed:.3f}s\n")
-
-        _log_result("chroma", question, returned_sources, hit, elapsed, answer)
+        _log_generation(backend, question, returned_sources, hit, elapsed, answer)
 
     recall = hits / total if total else 0.0
-    print("=== RESULTS (Chroma) ===")
+    avg_time = statistics.mean(elapsed_times) if elapsed_times else 0.0
+    median_time = statistics.median(elapsed_times) if elapsed_times else 0.0
+    print(f"=== RESULTS ({title}) ===")
     print(f"Recall: {recall:.2%} ({hits}/{total})")
+    print(f"Time (avg): {avg_time:.3f}s  |  Time (median): {median_time:.3f}s")
+
+
+def evaluate_chroma(collection_name: str | None = None) -> None:
+    """Evaluate generation for Chroma. collection_name: default 'documents'; use e.g. vault_small for sweep."""
+    from chroma.generate import generate_answer
+
+    title = f"Chroma: {collection_name or 'documents'}"
+
+    def generate_fn(q):
+        return generate_answer(q, n_results=TOP_K, collection_name=collection_name, temperature=EVAL_TEMPERATURE)
+
+    _run_generation_eval("chroma", title, generate_fn)
 
 
 def evaluate_query() -> None:
-    """Evaluate generation using in-memory query backend."""
+    """Evaluate generation for in-memory query backend."""
     from query.generate import generate_answer
 
-    questions = load_questions()
-    total = hits = 0
+    def generate_fn(q):
+        return generate_answer(q, n_results=TOP_K)
 
-    print("\n=== GENERATION EVALUATION (Query) ===\n")
-
-    for item in questions:
-        question = item["question"]
-        expected_source = item.get("expected_source")
-
-        start = time.time()
-        out = generate_answer(question, n_results=TOP_K)
-        elapsed = time.time() - start
-
-        returned_sources = out.get("sources", [])
-        answer = out.get("answer", "")
-        hit = _check_hit(returned_sources, expected_source)
-
-        if hit:
-            hits += 1
-        total += 1
-
-        print(f"Q: {question}")
-        print(f"Retrieved sources (from LLM): {returned_sources}")
-        print(f"Hit: {hit}")
-        print(f"Time: {elapsed:.3f}s\n")
-
-        _log_result("query", question, returned_sources, hit, elapsed, answer)
-
-    recall = hits / total if total else 0.0
-    print("=== RESULTS (Query) ===")
-    print(f"Recall: {recall:.2%} ({hits}/{total})")
+    _run_generation_eval("query", "Query", generate_fn)
 
 
 def evaluate_faiss() -> None:
-    """Evaluate generation using FAISS backend."""
+    """Evaluate generation for FAISS backend."""
     from faiss_rag.generate import generate_answer
 
-    questions = load_questions()
-    total = hits = 0
+    def generate_fn(q):
+        return generate_answer(q, n_results=TOP_K)
 
-    print("\n=== GENERATION EVALUATION (FAISS) ===\n")
-
-    for item in questions:
-        question = item["question"]
-        expected_source = item.get("expected_source")
-
-        start = time.time()
-        out = generate_answer(question, n_results=TOP_K)
-        elapsed = time.time() - start
-
-        returned_sources = out.get("sources", [])
-        answer = out.get("answer", "")
-        hit = _check_hit(returned_sources, expected_source)
-
-        if hit:
-            hits += 1
-        total += 1
-
-        print(f"Q: {question}")
-        print(f"Retrieved sources (from LLM): {returned_sources}")
-        print(f"Hit: {hit}")
-        print(f"Time: {elapsed:.3f}s\n")
-
-        _log_result("faiss", question, returned_sources, hit, elapsed, answer)
-
-    recall = hits / total if total else 0.0
-    print("=== RESULTS (FAISS) ===")
-    print(f"Recall: {recall:.2%} ({hits}/{total})")
+    _run_generation_eval("faiss", "FAISS", generate_fn)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate generation (LLM response + sources) for a backend.")
-    parser.add_argument(
-        "backend",
-        choices=["chroma", "query", "faiss"],
-        help="Backend to evaluate: chroma, query, or faiss",
-    )
+    parser = argparse.ArgumentParser(description="Evaluate generation (LLM answer + sources) for a backend.")
+    parser.add_argument("backend", choices=["chroma", "query", "faiss"], help="Backend to evaluate.")
+    parser.add_argument("--collection", default=None, help="Chroma collection name (for backend=chroma sweep).")
     args = parser.parse_args()
 
     if args.backend == "chroma":
-        evaluate_chroma()
+        evaluate_chroma(collection_name=args.collection)
     elif args.backend == "query":
         evaluate_query()
     else:
