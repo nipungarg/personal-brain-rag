@@ -1,12 +1,8 @@
-from .clean import clean_text
 from pathlib import Path
-from .metadata import get_metadata
 from dotenv import load_dotenv
 from openai import OpenAI
 from .chunk_token import chunk_text
 import os
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data/llm_concepts_dirty.txt"
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -32,5 +28,3 @@ def embed_query(query: str) -> list[float]:
         input=query,
     )
     return response.data[0].embedding
-
-# print(embed_text(clean_text(DATA_DIR)))

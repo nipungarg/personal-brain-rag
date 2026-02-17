@@ -1,0 +1,56 @@
+  This document describes practical aspects of building systems with large language models and retrieval-augmented generation. The goal is to give you overlapping coverage of the same topics you might find in other LLM or RAG guides, so that a RAG system can pull citations from multiple sources when answering questions about chunking, embeddings, or retrieval.
+
+Large language models are trained on massive text corpora and can generate or reason over text. To use them in production you often need to ground their answers in your own data. That is where retrieval-augmented generation comes in. RAG means first retrieving relevant passages from a knowledge base—usually via semantic search over embeddings—and then passing those passages to the LLM as context so it can answer using your documents rather than only its training data. This reduces hallucination and keeps answers up to date without retraining the model. Both the choice of how you chunk your documents and how many chunks you retrieve per query (the top-k parameter) strongly affect answer quality.
+
+Embeddings turn text into fixed-length vectors. Similar texts get similar vectors, so you can find relevant passages by comparing the query embedding to stored chunk embeddings (e.g. with cosine similarity or dot product). Popular embedding models include OpenAI text-embedding-3-small, Cohere embed, and open-source options like sentence-transformers. The dimension (e.g. 1536 for OpenAI) is fixed per model; you must use the same model when indexing and when querying or you will get dimension mismatch errors. Vector databases such as ChromaDB, FAISS, Pinecone, Weaviate, and Qdrant store these vectors and support fast approximate nearest neighbour search. For RAG you typically embed every chunk at index time and embed the user query at query time, then fetch the top-k closest chunks.
+
+• Use one embedding model for both indexing and querying.
+• Vector stores: ChromaDB, FAISS, Pinecone, Weaviate, Qdrant; choose by scale and features.
+• Top-k: number of chunks returned per query; larger k often improves recall but adds noise.
+
+Chunking is how you split documents into pieces that will be embedded and retrieved. If chunks are too small you lose surrounding context; if they are too large each chunk contains more irrelevant text and retrieval is less precise. Many practitioners use chunks of 200 to 500 tokens with 20 to 50 tokens of overlap so that sentences are not cut in the middle. You can chunk by fixed token count, by sentence or paragraph (using a splitter from LangChain or spaCy), by semantic similarity (split when the embedding changes sharply), or by document structure (e.g. sections under headings). There is no universal best chunk size; it depends on your document length and query style. Experimenting with chunk size and overlap is one of the first things to do when tuning a RAG pipeline.
+
+RAG pipelines typically involve: (1) ingesting and cleaning documents, (2) chunking them, (3) embedding chunks and storing in a vector store with metadata (e.g. source file, section), (4) at query time embedding the query and running top-k retrieval, (5) building a prompt that includes the retrieved chunks and the question, (6) calling the LLM and optionally asking it to cite which chunks it used. Chunk size and top-k both influence how much context the model sees and how relevant that context is. If answers are incomplete, try increasing k or using slightly larger chunks. If answers are noisy or contradictory, try smaller k or smaller chunks and ensure your retrieval is returning the right passages.
+
+• Pipeline: ingest → clean → chunk → embed → store; at query: embed query → retrieve top-k → prompt with chunks → generate.
+• Chunk size and top-k are the main levers; tune them on a small set of questions.
+
+This document only (RAG Practices Guide): for most RAG tutorials we recommend starting with chunk_size=256 tokens, overlap=32, and k=3 as default hyperparameters. If answers are incomplete, increase k to 5; if answers are noisy, reduce k to 2 or use smaller chunks. Store both the chunk text and a stable chunk_id (e.g. source filename + chunk index) in your vector store metadata so the model can cite "according to chunk 2 of llm_practices_dirty.txt." When using FAISS or ChromaDB, persist the index to disk after building so you do not need to re-embed on every restart; re-index only when source documents change. These recommendations are exclusive to this practices guide and are not repeated in the concepts document.
+
+The top-k parameter controls how many retrieved chunks are passed into the prompt. With k=1 you only send the single best-matching chunk; with k=5 you send the five best. Higher k improves the chance that the correct passage is included (recall) but increases prompt length, cost, and the risk of distracting the model with irrelevant text. Lower k keeps the prompt focused but may miss the answer if it appears in the second or third best chunk. For simple factual questions k=2 or k=3 is often sufficient. For questions that require combining information from several places, k=5 to k=10 or multi-hop retrieval may be needed. Validating on a set of held-out questions and measuring whether the gold passage is in the top-k (retrieval recall) and whether the final answer is correct (end-to-end accuracy) is the right way to choose k and chunk size.
+
+Hallucination—when the model generates plausible but false or unsupported claims—is a major risk when using LLMs. RAG mitigates this by constraining the model to answer from retrieved text. Other mitigations include instructing the model to cite sources, using a separate step to check that citations support the claim, and applying human review for high-stakes outputs. Data cleaning before chunking (normalizing whitespace, removing headers and footers, stripping boilerplate) can improve embedding quality and retrieval, so the right chunks are actually retrieved. Testing your RAG system with and without cleaning helps quantify the benefit.
+
+• RAG reduces hallucination by grounding answers in retrieved chunks.
+• Ask the model to cite chunks; consider verification and human review.
+• Cleaning input documents can improve retrieval and thus answer quality.
+
+Re-ranking is an optional step after initial retrieval. Instead of sending all top-k chunks to the LLM, you can run a cross-encoder or another model over the query and each candidate chunk to score them again and keep only the top few. This improves precision: the first-stage retriever is fast and recall-oriented; the re-ranker is slower but more accurate. Hybrid search combines dense retrieval (embeddings) with sparse retrieval (e.g. BM25 keyword search). For queries that depend on exact phrases or entity names, sparse search helps; for conceptual or semantic questions, dense search is better. Fusing the two result lists (e.g. reciprocal rank fusion) gives you a single ranked list. Re-ranking and hybrid search are especially useful when your corpus is large or your queries are mixed (both factual and semantic).
+
+Evaluating RAG systems requires metrics at two levels: retrieval and generation. Retrieval recall measures whether the passage that contains the answer appears in the top-k. Retrieval precision measures what fraction of the top-k chunks are actually relevant. On the generation side, faithfulness measures whether the model’s answer is supported by the retrieved text (no unsupported claims), and answer relevance measures whether the answer addresses the question. Citation accuracy checks that any cited chunks do support the claims. Building a small evaluation set of (question, gold passage, ideal answer) triples and running your pipeline with different chunk sizes and k values lets you compare configurations. Because RAG can pull from multiple documents, citations may correctly point to more than one file; your evaluation should allow that.
+
+(1) Retrieval recall: is the gold passage in the top-k?
+(2) Retrieval precision: how many of the top-k are relevant?
+(3) Faithfulness: is the answer grounded in the retrieved text?
+(4) Answer relevance: does the answer address the question?
+(5) Citation accuracy: do cited chunks support the claims?
+
+In practice, RAG and fine-tuning address different needs. RAG is best when you have a changing or large knowledge base and want the model to answer from it without retraining. Fine-tuning is best when you need a specific style, format, or proprietary capability baked into the model. Many systems use both: a fine-tuned model for tone or task format, and RAG to inject up-to-date or domain-specific content. Context window limits mean you cannot put all documents in the prompt; chunking and retrieval select the most relevant subset. Choosing the right chunk size and top-k so that the model receives enough context without overwhelming it is a central design choice. When citations are required, your pipeline should store metadata (e.g. source filename, chunk index) with each vector so that the model can reference the correct document and the user can verify.
+
+This section is off-topic for RAG design. Sometimes ingested files contain version history, change logs, or legal disclaimers. Your chunking and cleaning steps should aim to exclude or downweight such content so it does not dominate retrieval. If users ask "What is RAG?" and get this paragraph, consider adjusting chunk boundaries or adding filters. Export formats like CSV and JSON are useful for storing chunk text and metadata; document version 2.0, last updated 2025. TODO: add evaluation benchmarks.
+
+Summary of overlapping points with other RAG and LLM guides: RAG combines retrieval (often over embeddings in a vector store) with generation. Chunking and top-k are key parameters. Use the same embedding model for index and query. Vector stores include ChromaDB, FAISS, Pinecone, Weaviate, Qdrant. Evaluate with retrieval recall and precision, and with faithfulness and answer relevance. Data cleaning and re-ranking can improve results. Citations allow users to check which chunks supported the answer, and when you have multiple source files, RAG can correctly cite from both.
+
+• RAG: retrieve relevant chunks, then generate; reduces hallucination; needs chunking, embeddings, vector store, top-k.
+• Chunk size and overlap: experiment with 200–500 tokens and overlap 20–50.
+• Top-k: tune on validation; balance recall and noise.
+• Same embedding model at index and query time.
+• Evaluate retrieval and generation; allow citations from multiple sources.
+
+Exclusive to this file: the RAG Practices Guide defines the "incremental indexing rule": when you add or update documents, only embed and index the new or changed chunks rather than re-processing the full corpus, as long as your chunk IDs are stable. For latency-sensitive applications, use a flat index (exact search) for corpora under roughly 100k chunks and switch to HNSW or IVF when the index grows larger. Query rewriting—rephrasing the user question into a more retrieval-friendly form before embedding—can improve recall; this technique is described only in the practices guide.
+
+  [REVIEW NEEDED]
+***  Footnotes and citations to be added  ***
+--- [END OF DOCUMENT] ---
+TODO: add references
+Version: 1.0  Last updated: 2024-06-01

@@ -1,0 +1,22 @@
+feat: chroma/faiss RAG backends, source-aware generation, retrieval & generation eval
+
+RAG backends
+- Add chroma/ (client, store, retrieve, generate) and faiss_rag/ (client, store, retrieve, generate).
+- Chroma generate uses query.prompt.build_prompt; get_relevant_chunks() returns structured chunks with metadata.
+
+Generation: answer + sources
+- query/prompt.py: prompt asks for SOURCES line; add parse_response() → {answer, sources}.
+- chroma, faiss_rag, query generate_answer() return {"answer": str, "sources": list[str]}.
+
+Retrieval relevance and eval
+- chroma/retrieve and faiss_rag/retrieve: RELEVANCE_MAX_DISTANCE threshold; return no context when best match exceeds it.
+- eval/evaluate_retrieval.py: filter results by same threshold; skip out-of-domain questions (expected_source None); only evaluate in-domain retrieval.
+- eval/evaluate_generation.py: new script to evaluate LLM output (answer + cited sources) per backend; logs generation_eval events.
+
+Ingest and query
+- Remove ingest/retrieval.py, storage.py, test_embeddings.py.
+- query/generate: add generate_answer() with min_similarity threshold; generate_response returns dict.
+- ingest: updates to chunk, clean, load, embedding, metadata; drop dirty data files, add llm_practices.txt.
+
+Requirements and utils
+- requirements.txt and utils/logger.py for eval logging.

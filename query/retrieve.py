@@ -1,18 +1,29 @@
-import sys
 from pathlib import Path
 import numpy as np
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from ingest.chunk_token import chunk_text
 from ingest.clean import clean_text
 from ingest.embedding import embed_query, embed_text
+from ingest.load import get_txt_filenames
 
-text = clean_text("llm_concepts_dirty.txt")
-chunks = chunk_text(text)
-embeddings = embed_text(text)
+
+def load_all_chunks() -> list[dict]:
+    """Load all .txt files from data/, clean, chunk, embed. Return list of dicts: embedding, text, source, chunk_id."""
+    all_chunks = []
+    for filename in get_txt_filenames():
+        text = clean_text(filename)
+        chunks = chunk_text(text)
+        embeddings = embed_text(text)
+        stem = Path(filename).stem
+        for i, (emb, txt) in enumerate(zip(embeddings, chunks)):
+            all_chunks.append({
+                "embedding": emb,
+                "text": txt,
+                "source": filename,
+                "chunk_id": f"{stem}_{i}",
+            })
+    return all_chunks
+
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     a = np.array(a)
@@ -40,10 +51,17 @@ def retrieve_top_k(
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[:k]
 
-results = retrieve_top_k(embed_query("What is RAG?"), embeddings, chunks, 3, source_name="llm_concepts_dirty")
 
-# print("Top scores:", [r[0] for r in results])
-# print("Chunk IDs:", [r[1] for r in results])
-# print("First 200 characters of each chunk:")
-# for score, chunk_id, preview in results:
-#     print(f"  [{chunk_id}] {preview!r}")
+def retrieve_top_k_cross_corpus(
+    query_embedding: list[float],
+    all_chunks: list[dict],
+    k: int,
+) -> list[tuple[float, str, str]]:
+    """Retrieve top-k across all documents. all_chunks from load_all_chunks(). Returns (score, chunk_id, preview)."""
+    scored = []
+    for c in all_chunks:
+        score = cosine_similarity(query_embedding, c["embedding"])
+        preview = c["text"][:200] + "..." if len(c["text"]) > 200 else c["text"]
+        scored.append((score, c["chunk_id"], preview))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored[:k]

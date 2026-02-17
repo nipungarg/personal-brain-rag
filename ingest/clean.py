@@ -1,8 +1,5 @@
 import re
-from pathlib import Path
 from .load import load_text
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
 def clean_text(filename: str) -> str:

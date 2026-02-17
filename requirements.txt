@@ -1,7 +1,7 @@
 openai
-langchain
-llama-index
 chromadb
 python-dotenv
 faiss-cpu
 numpy
+tiktoken
+langchain-text-splitters

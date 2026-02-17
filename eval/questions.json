@@ -1,0 +1,74 @@
+[
+  {
+    "question": "What problem does RAG solve?",
+    "expected_source": ["llm_concepts.txt", "llm_practices.txt"]
+  },
+  {
+    "question": "Why do we chunk documents?",
+    "expected_source": ["llm_concepts.txt", "llm_practices.txt"]
+  },
+  {
+    "question": "What are embeddings?",
+    "expected_source": ["llm_concepts.txt", "llm_practices.txt"]
+  },
+  {
+    "question": "What is chunk overlap used for?",
+    "expected_source": ["llm_concepts.txt", "llm_practices.txt"]
+  },
+  {
+    "question": "What is top-k in retrieval?",
+    "expected_source": ["llm_concepts.txt", "llm_practices.txt"]
+  },
+  {
+    "question": "What is the formal definition of RAG in terms of probability?",
+    "expected_source": "llm_concepts.txt"
+  },
+  {
+    "question": "What is the information bottleneck in RAG?",
+    "expected_source": "llm_concepts.txt"
+  },
+  {
+    "question": "How is multi-hop retrieval defined?",
+    "expected_source": "llm_concepts.txt"
+  },
+  {
+    "question": "What is contrastive learning in the context of embedding models?",
+    "expected_source": "llm_concepts.txt"
+  },
+  {
+    "question": "How is self-attention formally computed in transformers?",
+    "expected_source": "llm_concepts.txt"
+  },
+  {
+    "question": "What default chunk size and overlap does the RAG practices guide recommend?",
+    "expected_source": "llm_practices.txt"
+  },
+  {
+    "question": "What is query rewriting and why use it?",
+    "expected_source": "llm_practices.txt"
+  },
+  {
+    "question": "When should you use a flat index versus HNSW or IVF?",
+    "expected_source": "llm_practices.txt"
+  },
+  {
+    "question": "What is the incremental indexing rule?",
+    "expected_source": "llm_practices.txt"
+  },
+  {
+    "question": "Why should you store chunk_id in vector store metadata?",
+    "expected_source": "llm_practices.txt"
+  },
+  {
+    "question": "What is the capital of France?",
+    "expected_source": null
+  },
+  {
+    "question": "How do you bake a chocolate cake?",
+    "expected_source": null
+  },
+  {
+    "question": "What is the population of Tokyo?",
+    "expected_source": null
+  }
+]
