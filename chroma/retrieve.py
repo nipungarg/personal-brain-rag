@@ -41,16 +41,3 @@ def get_relevant_chunks(
             "text": doc or "",
         })
     return chunks
-
-
-def get_relevant_context(
-    query: str,
-    n_results: int = 3,
-    max_distance: float = RELEVANCE_MAX_DISTANCE,
-    collection_name: str | None = None,
-) -> str:
-    """Return concatenated top-n document chunks for the query, or empty string if no result is relevant."""
-    chunks = get_relevant_chunks(
-        query, n_results=n_results, max_distance=max_distance, collection_name=collection_name
-    )
-    return "\n---\n".join(c["text"] for c in chunks) if chunks else ""

@@ -10,12 +10,12 @@ __all__ = [
     "build_index",
     "add_documents",
     "query_collection",
-    "get_relevant_context",
+    "get_relevant_chunks",
     "generate_answer",
 ]
 
 _STORE_ATTRS = {"build_index", "add_documents", "query_collection"}
-_RETRIEVE_ATTRS = {"get_relevant_context"}
+_RETRIEVE_ATTRS = {"get_relevant_chunks"}
 _GENERATE_ATTRS = {"generate_answer"}
 
 
