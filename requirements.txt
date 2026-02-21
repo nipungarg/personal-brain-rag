@@ -5,3 +5,5 @@ faiss-cpu
 numpy
 tiktoken
 langchain-text-splitters
+rank_bm25
+sentence-transformers

@@ -5,13 +5,20 @@ Runs each backend's generate_answer(), checks that returned sources match expect
 Logs question, retrieved_sources, hit, time, and answer snippet.
 """
 
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import argparse
 import statistics
 import time
 
 from utils.logger import log_event
 
-from .common import load_questions, check_hit
+from eval.common import load_questions, check_hit, snippet
 
 TOP_K = 4
 EVAL_TEMPERATURE = 0.0  # Deterministic recall for comparable runs across collections.
@@ -26,25 +33,26 @@ def _log_generation(
     answer_snippet: str = "",
 ) -> None:
     """Log one question's generation eval to run_log.jsonl."""
-    snippet = answer_snippet[:200] + "..." if len(answer_snippet) > 200 else answer_snippet
     log_event("generation_eval", {
         "backend": backend,
         "question": question,
         "retrieved_sources": retrieved_sources,
         "hit": hit,
         "time_sec": round(elapsed, 4),
-        "answer_snippet": snippet,
+        "answer_snippet": snippet(answer_snippet),
     })
 
 
 def _run_generation_eval(backend: str, title: str, generate_fn) -> None:
     """
     Generic generation eval loop: for each question, call generate_fn(question)
-    -> {answer, sources}, compute hit from sources vs expected_source, print and log.
+    -> {answer, sources, ...}; compute hit, accumulate tokens and cost; print and log.
     """
     questions = load_questions()
     hits = total = 0
     elapsed_times: list[float] = []
+    total_tokens = 0
+    total_cost_usd = 0.0
 
     print(f"\n=== GENERATION EVALUATION ({title}) ===\n")
 
@@ -56,6 +64,8 @@ def _run_generation_eval(backend: str, title: str, generate_fn) -> None:
         out = generate_fn(question)
         elapsed = time.time() - start
         elapsed_times.append(elapsed)
+        total_tokens += out.get("total_tokens", 0)
+        total_cost_usd += out.get("cost_usd", 0.0)
 
         returned_sources = out.get("sources", [])
         answer = out.get("answer", "")
@@ -76,16 +86,36 @@ def _run_generation_eval(backend: str, title: str, generate_fn) -> None:
     print(f"=== RESULTS ({title}) ===")
     print(f"Recall: {recall:.2%} ({hits}/{total})")
     print(f"Time (avg): {avg_time:.3f}s  |  Time (median): {median_time:.3f}s")
+    print(f"Total tokens: {total_tokens}")
+    print(f"Cost: ${total_cost_usd:.4f}")
 
 
-def evaluate_chroma(collection_name: str | None = None) -> None:
+def evaluate_chroma(
+    collection_name: str | None = None,
+    use_hybrid: bool = False,
+    use_reranker: bool = False,
+    rerank_initial_k: int = 20,
+) -> None:
     """Evaluate generation for Chroma. collection_name: default 'documents'; use e.g. vault_small for sweep."""
     from chroma.generate import generate_answer
 
-    title = f"Chroma: {collection_name or 'documents'}"
+    parts = [collection_name or "documents"]
+    if use_hybrid:
+        parts.append("hybrid")
+    if use_reranker:
+        parts.append("rerank")
+    title = f"Chroma: {'+'.join(parts)}"
 
     def generate_fn(q):
-        return generate_answer(q, n_results=TOP_K, collection_name=collection_name, temperature=EVAL_TEMPERATURE)
+        return generate_answer(
+            q,
+            n_results=TOP_K,
+            collection_name=collection_name,
+            temperature=EVAL_TEMPERATURE,
+            use_hybrid=use_hybrid,
+            use_reranker=use_reranker,
+            rerank_initial_k=rerank_initial_k,
+        )
 
     _run_generation_eval("chroma", title, generate_fn)
 
@@ -114,10 +144,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate generation (LLM answer + sources) for a backend.")
     parser.add_argument("backend", choices=["chroma", "query", "faiss"], help="Backend to evaluate.")
     parser.add_argument("--collection", default=None, help="Chroma collection name (for backend=chroma sweep).")
+    parser.add_argument("--hybrid", action="store_true", help="Use hybrid (dense + BM25) retrieval (chroma only).")
+    parser.add_argument("--rerank", action="store_true", help="Use cross-encoder reranker (chroma only).")
+    parser.add_argument("--rerank-initial-k", type=int, default=20, help="Candidates to retrieve when using --rerank (default 20).")
     args = parser.parse_args()
 
     if args.backend == "chroma":
-        evaluate_chroma(collection_name=args.collection)
+        evaluate_chroma(
+            collection_name=args.collection,
+            use_hybrid=args.hybrid,
+            use_reranker=args.rerank,
+            rerank_initial_k=args.rerank_initial_k,
+        )
     elif args.backend == "query":
         evaluate_query()
     else:

@@ -1,10 +1,15 @@
-"""Shared eval utilities: question loading and hit logic for retrieval and generation eval."""
+"""Shared eval utilities: question loading, hit logic, and snippet for retrieval/generation eval."""
 
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 QUESTIONS_PATH = ROOT / "eval" / "questions.json"
+
+
+def snippet(text: str, max_len: int = 200) -> str:
+    """Truncate to max_len chars with '...' if longer."""
+    return text[:max_len] + "..." if len(text) > max_len else text
 
 
 def load_questions() -> list[dict]:

@@ -2,7 +2,6 @@
 
 import faiss
 
-from .client import load_index_and_metadata
 from .store import search_index
 
 # Max L2 distance for a result to be considered relevant.

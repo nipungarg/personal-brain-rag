@@ -3,20 +3,29 @@
 Only in-domain questions (expected_source set) are evaluated; out-of-domain are skipped.
 """
 
-import argparse
-import statistics
-import time
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import argparse
+import statistics
+import time
 
 from ingest.embedding import embed_query
 from utils.logger import log_event
 
-from .common import load_questions, check_hit
+from eval.common import load_questions, check_hit, snippet
 
 TOP_K = 4
 RELEVANCE_MAX_DISTANCE = 1.5  # Max distance for a result to count as "retrieved" (chroma/faiss).
+
+
+def _result_row(rank: int, score: float, chunk_id: str, text_snippet: str, source: str) -> dict:
+    """Single retrieval result dict for eval logging."""
+    return {"rank": rank, "score": float(score), "chunk_id": chunk_id, "text_snippet": text_snippet, "source": source}
 
 
 def _sources_from_results(results: list[dict]) -> list[str]:
@@ -101,16 +110,9 @@ def _chroma_get_results(collection_name: str):
         documents = raw["documents"][0]
         metadatas = raw["metadatas"][0]
         distances = raw.get("distances", [[]])[0] or [0.0] * len(ids)
-        results = [
-            {
-                "rank": r,
-                "score": float(score),
-                "chunk_id": chunk_id,
-                "text_snippet": (doc[:200] + "..." if len(doc) > 200 else doc) if doc else "",
-                "source": meta.get("filename", ""),
-            }
-            for r, (chunk_id, doc, meta, score) in enumerate(zip(ids, documents, metadatas, distances), 1)
-        ]
+        snip = lambda d: snippet(d) if d else ""
+        results = [_result_row(r, score, chunk_id, snip(doc), meta.get("filename", ""))
+                   for r, (chunk_id, doc, meta, score) in enumerate(zip(ids, documents, metadatas, distances), 1)]
         return results, elapsed
 
     return get_results
@@ -127,16 +129,8 @@ def _query_get_results():
         start = time.time()
         retrieved = retrieve_top_k_cross_corpus(embed_query(question), all_chunks, k=TOP_K)
         elapsed = time.time() - start
-        results = [
-            {
-                "rank": rank,
-                "score": float(score),
-                "chunk_id": chunk_id,
-                "text_snippet": preview,
-                "source": chunk_id_to_source.get(chunk_id, ""),
-            }
-            for rank, (score, chunk_id, preview) in enumerate(retrieved, 1)
-        ]
+        results = [_result_row(rank, score, chunk_id, preview, chunk_id_to_source.get(chunk_id, ""))
+                   for rank, (score, chunk_id, preview) in enumerate(retrieved, 1)]
         return results, elapsed
 
     return get_results
@@ -160,13 +154,7 @@ def _faiss_get_results():
             src = sources[idx]
             chunk_id = f"{Path(src).stem}_{sources[: idx + 1].count(src) - 1}"
             text = chunks[idx] if idx < len(chunks) else ""
-            results.append({
-                "rank": rank,
-                "score": float(dist),
-                "chunk_id": chunk_id,
-                "text_snippet": text[:200] + "..." if len(text) > 200 else text,
-                "source": src,
-            })
+            results.append(_result_row(rank, float(dist), chunk_id, snippet(text), src))
         return results, elapsed
 
     return get_results

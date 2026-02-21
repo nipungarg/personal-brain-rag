@@ -14,6 +14,10 @@ load_dotenv(ROOT / ".env")
 MODEL = "gpt-4o-mini"
 MAX_TOKENS = 1000
 
+# Pricing per 1M tokens (update from https://platform.openai.com/docs/pricing if needed)
+INPUT_PRICE_PER_1M = 0.15
+OUTPUT_PRICE_PER_1M = 0.60
+
 _client = None
 
 
@@ -27,8 +31,10 @@ def get_client() -> OpenAI:
 
 def complete_rag(prompt: str, temperature: float = 0.2) -> dict:
     """
-    Send prompt to the LLM and return parsed {answer, sources}.
-    Used by chroma, faiss_rag, and query generate modules.
+    Send prompt to the LLM and return parsed {answer, sources} plus usage and cost.
+
+    Returns:
+        answer, sources, prompt_tokens, completion_tokens, total_tokens, cost_usd
     """
     response = get_client().chat.completions.create(
         model=MODEL,
@@ -36,4 +42,19 @@ def complete_rag(prompt: str, temperature: float = 0.2) -> dict:
         temperature=temperature,
         max_tokens=MAX_TOKENS,
     )
-    return parse_response(response.choices[0].message.content)
+    parsed = parse_response(response.choices[0].message.content)
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        pt, ct = getattr(usage, "prompt_tokens", 0) or 0, getattr(usage, "completion_tokens", 0) or 0
+        total = getattr(usage, "total_tokens", None) or (pt + ct)
+        cost_usd = (pt / 1e6 * INPUT_PRICE_PER_1M) + (ct / 1e6 * OUTPUT_PRICE_PER_1M)
+        parsed["prompt_tokens"] = pt
+        parsed["completion_tokens"] = ct
+        parsed["total_tokens"] = total
+        parsed["cost_usd"] = cost_usd
+    else:
+        parsed.setdefault("prompt_tokens", 0)
+        parsed.setdefault("completion_tokens", 0)
+        parsed.setdefault("total_tokens", 0)
+        parsed.setdefault("cost_usd", 0.0)
+    return parsed

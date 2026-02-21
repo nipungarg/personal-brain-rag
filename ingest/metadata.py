@@ -1,12 +1,5 @@
-from pathlib import Path
-from .chunk_token import chunk_text
 import uuid
-
-
-def get_metadata(text: str, source_filename: str) -> tuple[list[dict], list[str]]:
-    """Return (metadatas, ids) for each chunk. source_filename is the data file name. Uses default chunk_text."""
-    chunks = chunk_text(text)
-    return get_metadata_for_chunks(chunks, source_filename)
+from pathlib import Path
 
 
 def get_metadata_for_chunks(chunks: list[str], source_filename: str) -> tuple[list[dict], list[str]]:

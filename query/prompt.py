@@ -1,9 +1,7 @@
 """RAG prompt building and response parsing: format context, build_prompt, parse_response (answer + SOURCES line)."""
 
-from typing import Dict, List, Union
 
-
-def format_context(chunks: List[Dict]) -> str:
+def format_context(chunks: list[dict]) -> str:
     """
     Format retrieved chunks into a readable context block.
     Each chunk includes metadata for traceability.
@@ -20,7 +18,7 @@ def format_context(chunks: List[Dict]) -> str:
     return "\n---\n".join(formatted_chunks)
 
 
-def build_prompt(question: str, retrieved_chunks: List[Dict]) -> str:
+def build_prompt(question: str, retrieved_chunks: list[dict]) -> str:
     """
     Build a grounded RAG prompt using retrieved context.
     Asks the model to list source filenames at the end in a parseable format.
@@ -56,7 +54,7 @@ ANSWER:
     return prompt.strip()
 
 
-def parse_response(response: str) -> Dict[str, Union[str, List[str]]]:
+def parse_response(response: str) -> dict[str, str | list[str]]:
     """
     Parse model response into answer text and list of source filenames.
     Expects a final line "SOURCES: ..." or "SOURCES: none".

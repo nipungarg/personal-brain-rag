@@ -6,6 +6,13 @@ from ingest.clean import clean_text
 from ingest.embedding import embed_query, embed_text
 from ingest.load import get_txt_filenames
 
+SNIPPET_LEN = 200
+
+
+def _preview(text: str, max_len: int = SNIPPET_LEN) -> str:
+    """First max_len chars with '...' if truncated."""
+    return text[:max_len] + "..." if len(text) > max_len else text
+
 
 def load_all_chunks() -> list[dict]:
     """Load all .txt files from data/, clean, chunk, embed. Return list of dicts: embedding, text, source, chunk_id."""
@@ -25,31 +32,9 @@ def load_all_chunks() -> list[dict]:
     return all_chunks
 
 
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    a = np.array(a)
-    b = np.array(b)
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-def retrieve_top_k(
-    query_embedding: list[float],
-    chunk_embeddings: list[list[float]],
-    chunk_texts: list[str],
-    k: int,
-    source_name: str = "doc",
-) -> list[tuple[float, str, str]]:
-    """Return top-k (score, chunk_id, preview) by cosine similarity. Preview = first 200 chars."""
-    if len(chunk_embeddings) != len(chunk_texts):
-        raise ValueError("chunk_embeddings and chunk_texts must have same length")
-    scored = [
-        (
-            cosine_similarity(query_embedding, emb),
-            f"{source_name}_{i}",
-            (chunk_texts[i][:200] + "..." if len(chunk_texts[i]) > 200 else chunk_texts[i]),
-        )
-        for i, emb in enumerate(chunk_embeddings)
-    ]
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return scored[:k]
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    x, y = np.array(a), np.array(b)
+    return float(np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)))
 
 
 def retrieve_top_k_cross_corpus(
@@ -58,10 +43,7 @@ def retrieve_top_k_cross_corpus(
     k: int,
 ) -> list[tuple[float, str, str]]:
     """Retrieve top-k across all documents. all_chunks from load_all_chunks(). Returns (score, chunk_id, preview)."""
-    scored = []
-    for c in all_chunks:
-        score = cosine_similarity(query_embedding, c["embedding"])
-        preview = c["text"][:200] + "..." if len(c["text"]) > 200 else c["text"]
-        scored.append((score, c["chunk_id"], preview))
+    scored = [(_cosine_similarity(query_embedding, c["embedding"]), c["chunk_id"], _preview(c["text"]))
+              for c in all_chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[:k]

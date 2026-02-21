@@ -9,13 +9,14 @@ __all__ = [
     "get_collection",
     "build_index",
     "add_documents",
-    "query_collection",
     "get_relevant_chunks",
+    "get_relevant_chunks_hybrid",
+    "rerank_chunks",
     "generate_answer",
 ]
 
-_STORE_ATTRS = {"build_index", "add_documents", "query_collection"}
-_RETRIEVE_ATTRS = {"get_relevant_chunks"}
+_STORE_ATTRS = {"build_index", "add_documents"}
+_RETRIEVE_ATTRS = {"get_relevant_chunks", "get_relevant_chunks_hybrid", "rerank_chunks"}
 _GENERATE_ATTRS = {"generate_answer"}
 
 
