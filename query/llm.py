@@ -1,6 +1,7 @@
 """Shared LLM call for RAG generation: single place for model, max_tokens, and prompt → parsed answer + sources."""
 
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -31,11 +32,12 @@ def get_client() -> OpenAI:
 
 def complete_rag(prompt: str, temperature: float = 0.2) -> dict:
     """
-    Send prompt to the LLM and return parsed {answer, sources} plus usage and cost.
+    Send prompt to the LLM and return parsed {answer, sources} plus usage, cost, and llm_s.
 
     Returns:
-        answer, sources, prompt_tokens, completion_tokens, total_tokens, cost_usd
+        answer, sources, prompt_tokens, completion_tokens, total_tokens, cost_usd, llm_s
     """
+    t0 = time.perf_counter()
     response = get_client().chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -43,6 +45,7 @@ def complete_rag(prompt: str, temperature: float = 0.2) -> dict:
         max_tokens=MAX_TOKENS,
     )
     parsed = parse_response(response.choices[0].message.content)
+    parsed["llm_s"] = time.perf_counter() - t0
     usage = getattr(response, "usage", None)
     if usage is not None:
         pt, ct = getattr(usage, "prompt_tokens", 0) or 0, getattr(usage, "completion_tokens", 0) or 0

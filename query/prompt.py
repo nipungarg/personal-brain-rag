@@ -2,20 +2,11 @@
 
 
 def format_context(chunks: list[dict]) -> str:
-    """
-    Format retrieved chunks into a readable context block.
-    Each chunk includes metadata for traceability.
-    """
-    formatted_chunks = []
-    for chunk in chunks:
-        chunk_block = (
-            f"[Source: {chunk['source']} | "
-            f"Chunk: {chunk['chunk_index']} | "
-            f"ID: {chunk['id']}]\n"
-            f"{chunk['text']}\n"
-        )
-        formatted_chunks.append(chunk_block)
-    return "\n---\n".join(formatted_chunks)
+    """Format retrieved chunks into a readable context block with source/chunk/id metadata."""
+    return "\n---\n".join(
+        f"[Source: {c['source']} | Chunk: {c['chunk_index']} | ID: {c['id']}]\n{c['text']}\n"
+        for c in chunks
+    )
 
 
 def build_prompt(question: str, retrieved_chunks: list[dict]) -> str:

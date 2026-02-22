@@ -1,15 +1,6 @@
-"""Retrieval evaluation for chroma, query (in-memory), and faiss backends.
+"""Retrieval evaluation for chroma, query (in-memory), and faiss backends."""
 
-Only in-domain questions (expected_source set) are evaluated; out-of-domain are skipped.
-"""
-
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
+import eval.common  # noqa: F401 — ensures project root on path
 import argparse
 import statistics
 import time

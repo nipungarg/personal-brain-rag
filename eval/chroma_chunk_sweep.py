@@ -1,16 +1,12 @@
-"""Chroma chunk config sweep: build vault_* collections and run retrieval + generation eval for each.
-
-Builds vault_small (300/50), vault_medium (500/100), vault_large (1000/200), runs eval per collection,
-and prints a summary table. Does not modify the default "documents" collection or faiss_rag/query.
-"""
+"""Chroma chunk config sweep: build vault_* collections and run retrieval + generation eval for each."""
 
 import argparse
 import re
 import subprocess
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+import eval.common
+from eval.common import ROOT
 
 CONFIGS = [
     {"name": "vault_small", "size": 300, "overlap": 50},

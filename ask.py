@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Ask a question via user input; run RAG and print answer, sources, timings, tokens, cost.
+
+Usage:
+  python ask.py
+  python ask.py --question "What is RAG?"
+  python ask.py -q "How does tokenization work?"
+  python ask.py -q "Fresh run, no cache" --no-cache
+"""
+
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import argparse
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Ask a question (user input or --question); run RAG and print answer."
+    )
+    parser.add_argument(
+        "-q", "--question",
+        default=None,
+        help="Question to ask. If omitted, prompt for input.",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=["chroma", "query", "faiss"],
+        default="chroma",
+        help="RAG backend (default: chroma).",
+    )
+    parser.add_argument("--collection", default=None, help="Chroma collection (backend=chroma).")
+    parser.add_argument("--rerank", type=int, default=0, dest="rerank_initial_k", metavar="K", help="If > 0, retrieve K candidates and rerank to top-n (chroma). 0 = no reranking.")
+    parser.add_argument("--no-cache", action="store_false", dest="use_cache", default=True, help="Disable semantic response cache (chroma). Cache is on by default.")
+    parser.add_argument("-n", "--n-results", type=int, default=4, help="Number of chunks to retrieve (default 4).")
+    args = parser.parse_args()
+
+    question = args.question
+    if question is None or question.strip() == "":
+        question = input("Question: ").strip()
+    if not question:
+        print("No question provided.", file=sys.stderr)
+        sys.exit(1)
+
+    t0 = time.perf_counter()
+    if args.backend == "chroma":
+        from chroma.generate import generate_answer
+        out = generate_answer(
+            question,
+            n_results=args.n_results,
+            collection_name=args.collection,
+            rerank_initial_k=args.rerank_initial_k,
+            use_cache=args.use_cache,
+            return_timings=True,
+        )
+    elif args.backend == "query":
+        from query.generate import generate_answer
+        out = generate_answer(question, n_results=args.n_results)
+        out.setdefault("cached", False)
+    else:
+        from faiss_rag.generate import generate_answer
+        out = generate_answer(question, n_results=args.n_results)
+        out.setdefault("cached", False)
+    total_s = time.perf_counter() - t0
+    if "total_s" not in out:
+        out["total_s"] = total_s
+
+    # --- Metadata ---
+    print("\n---")
+    print("Cached:", out.get("cached", False))
+    print("Total time: {:.3f}s".format(out.get("total_s", total_s)))
+    if "embed_s" in out:
+        print("  Embedding: {:.3f}s".format(out["embed_s"]))
+    if "retrieval_s" in out:
+        print("  Retrieval / vector search: {:.3f}s".format(out["retrieval_s"]))
+    if "llm_s" in out:
+        print("  LLM generation: {:.3f}s".format(out["llm_s"]))
+    print("Total tokens:", out.get("total_tokens", 0))
+    print("Cost: ${:.4f}".format(out.get("cost_usd", 0.0)))
+    print("---\n")
+    print("ANSWER:\n", out.get("answer", ""))
+    print("\nSOURCES:", out.get("sources", []))
+
+
+if __name__ == "__main__":
+    main()

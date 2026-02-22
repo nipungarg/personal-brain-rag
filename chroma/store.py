@@ -1,8 +1,4 @@
-"""Build ChromaDB index from data/ .txt files.
-
-- build_index(): default collection "documents" with default chunk size/overlap.
-- build_index_for_config(): named collection (e.g. vault_small) with custom chunk_size/chunk_overlap for sweep.
-"""
+"""Build ChromaDB index from data/ .txt: build_index (default collection), build_index_for_config (named collection + chunk config)."""
 
 import chromadb
 

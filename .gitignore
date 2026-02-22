@@ -5,3 +5,4 @@ chroma_db/
 faiss_db/
 eval/run_log.jsonl
 eval/questions.json
+cache.db

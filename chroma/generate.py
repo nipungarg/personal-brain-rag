@@ -1,9 +1,11 @@
 """Generate RAG answers using ChromaDB-retrieved context."""
 
+import time
 from query.prompt import build_prompt
 from query.llm import complete_rag
+from query.cache import get_cached_response, set_cached_response, DEFAULT_THRESHOLD
 
-from .retrieve import get_relevant_chunks, get_relevant_chunks_hybrid
+from .retrieve import get_relevant_chunks_adaptive
 
 
 def generate_answer(
@@ -11,35 +13,59 @@ def generate_answer(
     n_results: int = 3,
     collection_name: str | None = None,
     temperature: float = 0.2,
-    use_hybrid: bool = False,
-    use_reranker: bool = False,
-    rerank_initial_k: int = 20,
+    rerank_initial_k: int = 0,
+    use_cache: bool = False,
+    cache_threshold: float = DEFAULT_THRESHOLD,
+    return_timings: bool = False,
 ) -> dict:
     """
-    Retrieve context from ChromaDB and generate an answer.
-
-    Args:
-        query: User question.
-        n_results: Number of chunks to retrieve (top-k).
-        collection_name: Chroma collection; None => "documents". Use e.g. vault_small for sweep.
-        temperature: 0 for deterministic eval; 0.2 for slightly varied answers.
-        use_hybrid: If True, use hybrid (dense + BM25) retrieval with RRF instead of dense-only.
-        use_reranker: If True, rerank candidates with a cross-encoder before returning top n_results.
-        rerank_initial_k: Number of candidates to retrieve when use_reranker (ignored otherwise).
-
-    Returns:
-        {"answer": str, "sources": list[str]} — answer text and cited filenames.
+    Adaptive retrieval (keyword-heavy→hybrid, else dense with hybrid fallback) + optional cache and rerank.
+    Returns dict with answer, sources, cached; optionally embed_s, retrieval_s, llm_s, total_s, total_tokens, cost_usd.
     """
-    get_chunks = get_relevant_chunks_hybrid if use_hybrid else get_relevant_chunks
-    chunks = get_chunks(
-        query,
-        n_results=n_results,
-        collection_name=collection_name,
-        use_reranker=use_reranker,
-        rerank_initial_k=rerank_initial_k,
-    )
-    prompt = build_prompt(query, chunks)
-    return complete_rag(prompt, temperature=temperature)
+    def _raw_generate(q: str, with_timings: bool = False) -> dict:
+        result = get_relevant_chunks_adaptive(
+            q,
+            n_results=n_results,
+            collection_name=collection_name,
+            rerank_initial_k=rerank_initial_k,
+            return_timings=with_timings,
+        )
+        if with_timings:
+            chunks, timings = result
+            embed_s, retrieval_s = timings["embed_s"], timings["retrieval_s"]
+        else:
+            chunks = result
+        prompt = build_prompt(q, chunks)
+        out = complete_rag(prompt, temperature=temperature)
+        if with_timings:
+            llm_s = out.get("llm_s", 0.0)
+            out["embed_s"] = embed_s
+            out["retrieval_s"] = retrieval_s
+            out["llm_s"] = llm_s
+            out["total_s"] = embed_s + retrieval_s + llm_s
+        return out
+
+    if use_cache:
+        t0 = time.perf_counter()
+        cached = get_cached_response(query, threshold=cache_threshold)
+        if cached is not None:
+            total_s = time.perf_counter() - t0
+            return {
+                **cached,
+                "cached": True,
+                "embed_s": 0.0,
+                "retrieval_s": total_s,
+                "llm_s": 0.0,
+                "total_s": total_s,
+            }
+        out = _raw_generate(query, with_timings=return_timings)
+        set_cached_response(query, out.get("answer", ""), out.get("sources", []))
+        out["cached"] = False
+        return out
+
+    out = _raw_generate(query, with_timings=return_timings)
+    out.setdefault("cached", False)
+    return out
 
 
 if __name__ == "__main__":

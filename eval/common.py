@@ -1,9 +1,12 @@
 """Shared eval utilities: question loading, hit logic, and snippet for retrieval/generation eval."""
 
 import json
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 QUESTIONS_PATH = ROOT / "eval" / "questions.json"
 
 
@@ -19,14 +22,7 @@ def load_questions() -> list[dict]:
 
 
 def check_hit(returned_sources: list[str], expected_source) -> bool:
-    """
-    True if returned sources match the expected criterion.
-
-    - In-domain (expected_source is str or list): at least one expected source
-      must appear in returned_sources.
-    - Out-of-domain (expected_source is None): hit iff returned_sources is empty
-      (no docs cited / no docs retrieved).
-    """
+    """In-domain: at least one expected source in returned. Out-of-domain (expected_source None): hit iff returned is empty."""
     if expected_source is None:
         return not (returned_sources or [])
     if isinstance(expected_source, list):

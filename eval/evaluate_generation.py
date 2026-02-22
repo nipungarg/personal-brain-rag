@@ -1,17 +1,6 @@
-"""Generation evaluation for chroma, query, and faiss backends.
+"""Generation evaluation for chroma, query, and faiss backends."""
 
-Runs each backend's generate_answer(), checks that returned sources match expected_source
-(in-domain: at least one expected source cited; out-of-domain: no sources cited).
-Logs question, retrieved_sources, hit, time, and answer snippet.
-"""
-
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
+import eval.common  # noqa: F401 — ensures project root on path
 import argparse
 import statistics
 import time
@@ -92,18 +81,14 @@ def _run_generation_eval(backend: str, title: str, generate_fn) -> None:
 
 def evaluate_chroma(
     collection_name: str | None = None,
-    use_hybrid: bool = False,
-    use_reranker: bool = False,
-    rerank_initial_k: int = 20,
+    rerank_initial_k: int = 0,
 ) -> None:
-    """Evaluate generation for Chroma. collection_name: default 'documents'; use e.g. vault_small for sweep."""
+    """Evaluate generation for Chroma (adaptive retrieval). collection_name: default 'documents'; use e.g. vault_small for sweep."""
     from chroma.generate import generate_answer
 
     parts = [collection_name or "documents"]
-    if use_hybrid:
-        parts.append("hybrid")
-    if use_reranker:
-        parts.append("rerank")
+    if rerank_initial_k > 0:
+        parts.append(f"rerank({rerank_initial_k})")
     title = f"Chroma: {'+'.join(parts)}"
 
     def generate_fn(q):
@@ -112,8 +97,6 @@ def evaluate_chroma(
             n_results=TOP_K,
             collection_name=collection_name,
             temperature=EVAL_TEMPERATURE,
-            use_hybrid=use_hybrid,
-            use_reranker=use_reranker,
             rerank_initial_k=rerank_initial_k,
         )
 
@@ -144,16 +127,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate generation (LLM answer + sources) for a backend.")
     parser.add_argument("backend", choices=["chroma", "query", "faiss"], help="Backend to evaluate.")
     parser.add_argument("--collection", default=None, help="Chroma collection name (for backend=chroma sweep).")
-    parser.add_argument("--hybrid", action="store_true", help="Use hybrid (dense + BM25) retrieval (chroma only).")
-    parser.add_argument("--rerank", action="store_true", help="Use cross-encoder reranker (chroma only).")
-    parser.add_argument("--rerank-initial-k", type=int, default=20, help="Candidates to retrieve when using --rerank (default 20).")
+    parser.add_argument("--rerank", type=int, default=0, dest="rerank_initial_k", metavar="K", help="If > 0, retrieve K candidates and rerank (chroma). 0 = no reranking.")
     args = parser.parse_args()
 
     if args.backend == "chroma":
         evaluate_chroma(
             collection_name=args.collection,
-            use_hybrid=args.hybrid,
-            use_reranker=args.rerank,
             rerank_initial_k=args.rerank_initial_k,
         )
     elif args.backend == "query":
