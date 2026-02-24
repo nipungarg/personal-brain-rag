@@ -12,7 +12,7 @@ _reranker = None
 
 
 def _get_cross_encoder():
-    """Lazy-load the cross-encoder model so it's only loaded when reranking is used."""
+    """Lazy-load cross-encoder for reranking."""
     global _reranker
     if _reranker is None:
         from sentence_transformers import CrossEncoder
@@ -20,18 +20,22 @@ def _get_cross_encoder():
     return _reranker
 
 
-def rerank_chunks(query: str, chunks: list[dict], top_k: int) -> list[dict]:
-    """Rerank chunks by cross-encoder (query, document) relevance; return top_k."""
+def rerank_chunks(query: str, chunks: list[dict], top_k: int, return_scores: bool = False) -> list[dict] | tuple[list[dict], list[float]]:
+    """Rerank by cross-encoder; return top_k chunks, or (chunks, scores) if return_scores."""
     if not chunks or top_k <= 0:
-        return []
+        return ([], []) if return_scores else []
     if len(chunks) == 1:
-        return chunks[:top_k]
+        return (chunks[:top_k], [1.0]) if return_scores else chunks[:top_k]
     model = _get_cross_encoder()
     pairs = [(query, (c.get("text") or "")) for c in chunks]
     scores = model.predict(pairs)
     indexed = list(zip(scores, chunks))
     indexed.sort(key=lambda x: float(x[0]), reverse=True)
-    return [c for _, c in indexed[:top_k]]
+    top = indexed[:top_k]
+    out_chunks = [c for _, c in top]
+    if return_scores:
+        return out_chunks, [float(s) for s, _ in top]
+    return out_chunks
 
 
 def _tokenize(text: str) -> list[str]:
@@ -40,7 +44,7 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _chunk_dict(meta: dict, chunk_id: str, doc: str, i: int) -> dict:
-    """Build standard chunk dict (source, chunk_index, id, text) for retrieval results."""
+    """Build chunk dict with source, chunk_index, id, text."""
     return {
         "source": meta.get("filename", ""),
         "chunk_index": meta.get("index", i),
@@ -50,7 +54,7 @@ def _chunk_dict(meta: dict, chunk_id: str, doc: str, i: int) -> dict:
 
 
 def _is_keyword_heavy(query: str) -> bool:
-    """Heuristic: many tokens or contains numbers → use hybrid retrieval."""
+    """Heuristic: many tokens or numbers → prefer hybrid."""
     if not query or not query.strip():
         return False
     return len(query.strip().split()) >= 4 or any(c.isdigit() for c in query)
@@ -67,19 +71,11 @@ def get_relevant_chunks_adaptive(
     confidence_threshold: float = RELEVANCE_MAX_DISTANCE,
     return_timings: bool = False,
 ) -> list[dict] | tuple[list[dict], dict]:
-    """
-    Heuristics + confidence fallback:
-    Stage 1: If query looks keyword-heavy → use hybrid.
-    Stage 2: Otherwise run dense; if dense top score (distance) > confidence_threshold → re-run hybrid.
-    Else use dense result.
-    rerank_initial_k: If > 0, retrieve that many and rerank to n_results; 0 = no reranking.
-    If return_timings=True, returns (chunks, {"embed_s", "retrieval_s"}).
-    """
+    """Keyword-heavy → hybrid; else dense with hybrid fallback if top score weak. Optional return_timings."""
     coll_name = collection_name or "documents"
 
-    # Stage 1: keyword-heavy → hybrid
     if _is_keyword_heavy(query):
-        result = get_relevant_chunks_hybrid(
+        return get_relevant_chunks_hybrid(
             query,
             n_results=n_results,
             max_distance=max_distance,
@@ -89,7 +85,6 @@ def get_relevant_chunks_adaptive(
             rerank_initial_k=rerank_initial_k,
             return_timings=return_timings,
         )
-        return result
 
     # Stage 2: dense first, then confidence fallback
     use_reranker = rerank_initial_k > 0
@@ -115,11 +110,10 @@ def get_relevant_chunks_adaptive(
 
     top_distance = float(distances[0]) if distances else float("inf")
 
-    # Low confidence → fallback to hybrid
     if top_distance > confidence_threshold:
         if return_timings:
             retrieval_s = time.perf_counter() - t0
-            result = get_relevant_chunks_hybrid(
+            chunks, ht = get_relevant_chunks_hybrid(
                 query,
                 n_results=n_results,
                 max_distance=max_distance,
@@ -129,7 +123,6 @@ def get_relevant_chunks_adaptive(
                 rerank_initial_k=rerank_initial_k,
                 return_timings=True,
             )
-            chunks, ht = result
             out_embed = embed_s
             out_retrieval = retrieval_s + ht["embed_s"] + ht["retrieval_s"]
             return chunks, {"embed_s": out_embed, "retrieval_s": out_retrieval}
@@ -144,7 +137,6 @@ def get_relevant_chunks_adaptive(
             return_timings=False,
         )
 
-    # Use dense result
     chunks = []
     for i, (chunk_id, doc, meta, dist) in enumerate(zip(ids, documents, metadatas, distances)):
         if not use_reranker and dist > max_distance:
@@ -152,62 +144,7 @@ def get_relevant_chunks_adaptive(
         meta = meta if isinstance(meta, dict) else {}
         chunks.append(_chunk_dict(meta, chunk_id, doc, i))
     if use_reranker:
-        chunks = rerank_chunks(query, chunks, n_results)
-
-    if return_timings:
-        retrieval_s = time.perf_counter() - t0
-        return chunks, {"embed_s": embed_s, "retrieval_s": retrieval_s}
-    return chunks
-
-
-def get_relevant_chunks(
-    query: str,
-    n_results: int = 3,
-    max_distance: float = RELEVANCE_MAX_DISTANCE,
-    collection_name: str | None = None,
-    rerank_initial_k: int = 0,
-    return_timings: bool = False,
-) -> list[dict] | tuple[list[dict], dict]:
-    """
-    Return top-n chunks as list of dicts (source, chunk_index, id, text) within relevance threshold.
-    rerank_initial_k: If > 0, retrieve that many and rerank to n_results; 0 = no reranking.
-    If return_timings=True, returns (chunks, {"embed_s": float, "retrieval_s": float}).
-    """
-    use_reranker = rerank_initial_k > 0
-    collection = get_collection(collection_name or "documents")
-    k = rerank_initial_k if use_reranker else n_results
-
-    if return_timings:
-        t0 = time.perf_counter()
-        emb = embed_query(query)
-        embed_s = time.perf_counter() - t0
-        t0 = time.perf_counter()
-        results = collection.query(
-            query_embeddings=[emb],
-            n_results=k,
-            include=["documents", "metadatas", "distances"],
-        )
-    else:
-        results = collection.query(
-            query_embeddings=[embed_query(query)],
-            n_results=k,
-            include=["documents", "metadatas", "distances"],
-        )
-
-    ids = results["ids"][0]
-    documents = results["documents"][0]
-    metadatas = results.get("metadatas", [[]])[0] or [{}] * len(ids)
-    distances = results.get("distances", [[]])[0] or [0.0] * len(ids)
-
-    chunks = []
-    for i, (chunk_id, doc, meta, dist) in enumerate(zip(ids, documents, metadatas, distances)):
-        if not use_reranker and dist > max_distance:
-            continue
-        meta = meta if isinstance(meta, dict) else {}
-        chunks.append(_chunk_dict(meta, chunk_id, doc, i))
-    if use_reranker:
-        chunks = rerank_chunks(query, chunks, n_results)
-
+        chunks, _ = rerank_chunks(query, chunks, n_results, return_scores=True)
     if return_timings:
         retrieval_s = time.perf_counter() - t0
         return chunks, {"embed_s": embed_s, "retrieval_s": retrieval_s}
@@ -224,11 +161,7 @@ def get_relevant_chunks_hybrid(
     rerank_initial_k: int = 0,
     return_timings: bool = False,
 ) -> list[dict] | tuple[list[dict], dict]:
-    """
-    Hybrid retrieval: dense (Chroma) + sparse (BM25) with RRF.
-    rerank_initial_k: If > 0, take that many from RRF and rerank to n_results; 0 = no reranking.
-    If return_timings=True, returns (chunks, {"embed_s": float, "retrieval_s": float}).
-    """
+    """Dense + BM25 RRF. Optional rerank, return_timings."""
     use_reranker = rerank_initial_k > 0
     from rank_bm25 import BM25Okapi
     import numpy as np
@@ -280,8 +213,7 @@ def get_relevant_chunks_hybrid(
     chunks = [_chunk_dict(id_to_meta.get(chunk_id, {}), chunk_id, id_to_doc.get(chunk_id) or "", i)
               for i, chunk_id in enumerate(sorted_ids)]
     if use_reranker:
-        chunks = rerank_chunks(query, chunks, n_results)
-
+        chunks, _ = rerank_chunks(query, chunks, n_results, return_scores=True)
     if return_timings:
         retrieval_s = time.perf_counter() - t0
         return chunks, {"embed_s": embed_s, "retrieval_s": retrieval_s}

@@ -10,10 +10,7 @@ def format_context(chunks: list[dict]) -> str:
 
 
 def build_prompt(question: str, retrieved_chunks: list[dict]) -> str:
-    """
-    Build a grounded RAG prompt using retrieved context.
-    Asks the model to list source filenames at the end in a parseable format.
-    """
+    """Build RAG prompt with context; instructs model to end with SOURCES: line."""
     context_block = format_context(retrieved_chunks)
 
     prompt = f"""
@@ -46,11 +43,7 @@ ANSWER:
 
 
 def parse_response(response: str) -> dict[str, str | list[str]]:
-    """
-    Parse model response into answer text and list of source filenames.
-    Expects a final line "SOURCES: ..." or "SOURCES: none".
-    Returns {"answer": str, "sources": list[str]}.
-    """
+    """Parse response: answer text + SOURCES line → {"answer", "sources"}."""
     response = (response or "").strip()
     if not response:
         return {"answer": "", "sources": []}

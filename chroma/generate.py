@@ -18,10 +18,7 @@ def generate_answer(
     cache_threshold: float = DEFAULT_THRESHOLD,
     return_timings: bool = False,
 ) -> dict:
-    """
-    Adaptive retrieval (keyword-heavy→hybrid, else dense with hybrid fallback) + optional cache and rerank.
-    Returns dict with answer, sources, cached; optionally embed_s, retrieval_s, llm_s, total_s, total_tokens, cost_usd.
-    """
+    """Adaptive retrieval + optional cache/rerank. Returns answer, sources, cached; optional timings/tokens/cost."""
     def _raw_generate(q: str, with_timings: bool = False) -> dict:
         result = get_relevant_chunks_adaptive(
             q,

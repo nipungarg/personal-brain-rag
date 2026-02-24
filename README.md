@@ -21,12 +21,12 @@ A **Retrieval-Augmented Generation (RAG)** system that lets you query your perso
 ```
 data/*.txt  →  ingest (clean, chunk, embed)  →  index (Chroma / FAISS / or in-memory)
                                                           ↓
-User question  →  ask.py (or eval)  →  retrieve top-k chunks  →  build prompt  →  LLM  →  answer + sources
+User question  →  app.py / ask.py / eval  →  retrieve top-k  →  build prompt  →  LLM  →  answer + sources
 ```
 
-1. **Put documents** in `data/` as `.txt` (e.g. `data/llm_concepts.txt`).
-2. **Build an index** (Chroma or FAISS; query backend has no separate build step).
-3. **Run** `ask.py` (or eval scripts) with the desired backend; Chroma can use cache and rerank.
+1. **Put documents** in `data/` as `.txt`.
+2. **Build an index** (Chroma or FAISS).
+3. **Run** the Gradio app (`app.py`), CLI (`ask.py`), or eval scripts.
 
 ---
 
@@ -91,11 +91,24 @@ python -m faiss_rag.store
 
 This writes the index and metadata under `faiss_rag/` (or paths set in `faiss_rag.client`).
 
-**Query backend:** No build step. On first use it loads all `data/*.txt`, chunks and embeds in memory.
+**Query backend:** No build step; loads and embeds on first query.
 
 ---
 
-### 3. Ask questions (`ask.py`)
+### 3. Gradio app (`app.py`)
+
+Web UI with streaming answers, semantic cache, and optional rerank:
+
+```bash
+python app.py
+# or with auto-reload: gradio app.py
+```
+
+Open the URL (e.g. http://127.0.0.1:7860). Use the **Use rerank** checkbox to rerank retrieval. Repeat/similar questions are served from cache ($0 cost).
+
+---
+
+### 4. Ask questions (`ask.py`)
 
 **Interactive (prompt for question):**
 
@@ -141,7 +154,7 @@ Output includes: cached (yes/no), timings (embed, retrieval, LLM), total tokens,
 
 ---
 
-### 4. Evaluation
+### 5. Evaluation
 
 Eval uses `eval/questions.json` (questions + optional `expected_source`). Run from project root.
 
@@ -167,7 +180,7 @@ Results print recall, timings, and (for generation) token/cost; logs go to `run_
 
 ---
 
-### 5. Chunk-config sweep (Chroma)
+### 6. Chunk-config sweep (Chroma)
 
 Builds multiple Chroma collections (`vault_small`, `vault_medium`, `vault_large`) with different chunk sizes/overlaps, runs retrieval and generation eval for each, and prints a summary table:
 
@@ -195,6 +208,7 @@ python -m eval.chroma_chunk_sweep
 | `query/` | Prompt builder, LLM client, semantic cache (SQLite), in-memory retrieve + generate. |
 | `faiss_rag/` | FAISS index build, search, generation. |
 | `eval/` | Questions JSON, retrieval/generation eval scripts, chunk sweep. |
+| `app.py` | Gradio UI (streaming, cache, rerank; Chroma only). |
 | `ask.py` | CLI to ask questions (all backends). |
 | `.env` | `OPENAI_API_KEY` (not committed). |
 

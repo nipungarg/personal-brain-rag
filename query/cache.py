@@ -40,10 +40,7 @@ def _init_db(conn: sqlite3.Connection) -> None:
 
 
 def get_cached_response(query: str, threshold: float = DEFAULT_THRESHOLD) -> dict | None:
-    """
-    Look up a cached response by semantic similarity of the query embedding.
-    Returns {answer, sources} if best match has similarity >= threshold, else None.
-    """
+    """Return cached {answer, sources} if query embedding similarity >= threshold, else None."""
     conn = sqlite3.connect(CACHE_DB)
     _init_db(conn)
     try:
