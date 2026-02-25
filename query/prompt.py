@@ -1,5 +1,7 @@
 """RAG prompt building and response parsing: format context, build_prompt, parse_response (answer + SOURCES line)."""
 
+from typing import Dict, List, Union
+
 
 def format_context(chunks: list[dict]) -> str:
     """Format retrieved chunks into a readable context block with source/chunk/id metadata."""
@@ -42,7 +44,7 @@ ANSWER:
     return prompt.strip()
 
 
-def parse_response(response: str) -> dict[str, str | list[str]]:
+def parse_response(response: str) -> Dict[str, Union[str, List[str]]]:
     """Parse response: answer text + SOURCES line → {"answer", "sources"}."""
     response = (response or "").strip()
     if not response:

@@ -1,12 +1,10 @@
 """Generate RAG answers from in-memory chunks (cosine similarity retrieval)."""
 
+from config import DEFAULT_TOP_K, MIN_SIMILARITY, TEMPERATURE
 from ingest.embedding import embed_query
 from .prompt import build_prompt
 from .llm import complete_rag
 from .retrieve import load_all_chunks, retrieve_top_k_cross_corpus
-
-# Min cosine similarity to consider a chunk relevant; below => no context (out-of-domain).
-MIN_SIMILARITY = 0.5
 
 
 def _retrieve_results_to_context(retrieved: list[tuple[float, str, str]]) -> list[dict]:
@@ -28,12 +26,12 @@ def generate_response(query: str, context: list[tuple[float, str, str]]) -> dict
     Returns {"answer": str, "sources": list[str]}.
     """
     prompt = build_prompt(query, _retrieve_results_to_context(context))
-    return complete_rag(prompt, temperature=0.2)
+    return complete_rag(prompt, temperature=TEMPERATURE)
 
 
 def generate_answer(
     query: str,
-    n_results: int = 3,
+    n_results: int = DEFAULT_TOP_K,
     min_similarity: float = MIN_SIMILARITY,
 ) -> dict:
     """
@@ -51,7 +49,7 @@ def generate_answer(
 if __name__ == "__main__":
     q = "How is prompt engineering different from tokenization?"
     all_chunks = load_all_chunks()
-    retrieved = retrieve_top_k_cross_corpus(embed_query(q), all_chunks, 3)
+    retrieved = retrieve_top_k_cross_corpus(embed_query(q), all_chunks, DEFAULT_TOP_K)
     print("Top Retrieved Chunks:")
     for i, (score, chunk_id, _) in enumerate(retrieved, 1):
         print(f"{i}. ID: {chunk_id} | Score: {score:.2f}")

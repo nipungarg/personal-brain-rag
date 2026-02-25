@@ -1,6 +1,5 @@
 """Retrieval evaluation for chroma, query (in-memory), and faiss backends."""
 
-import eval.common  # noqa: F401 — ensures project root on path
 import argparse
 import statistics
 import time
@@ -8,10 +7,8 @@ import time
 from ingest.embedding import embed_query
 from utils.logger import log_event
 
-from eval.common import load_questions, check_hit, snippet
-
-TOP_K = 4
-RELEVANCE_MAX_DISTANCE = 1.5  # Max distance for a result to count as "retrieved" (chroma/faiss).
+from config import DEFAULT_COLLECTION, EVAL_TOP_K, RELEVANCE_MAX_DISTANCE
+from eval.common import load_questions, check_hit, snippet  # side effect: project root on path
 
 
 def _result_row(rank: int, score: float, chunk_id: str, text_snippet: str, source: str) -> dict:
@@ -79,7 +76,7 @@ def _run_retrieval_eval(
     avg_time = statistics.mean(elapsed_times) if elapsed_times else 0.0
     median_time = statistics.median(elapsed_times) if elapsed_times else 0.0
     print(f"=== RESULTS ({title}) ===")
-    print(f"Recall@{TOP_K}: {recall:.2%} ({hits}/{total})")
+    print(f"Recall@{EVAL_TOP_K}: {recall:.2%} ({hits}/{total})")
     print(f"Time (avg): {avg_time:.3f}s  |  Time (median): {median_time:.3f}s")
 
 
@@ -87,13 +84,13 @@ def _chroma_get_results(collection_name: str):
     """Return (results, elapsed) getter for Chroma backend."""
     from chroma.client import get_collection
 
-    collection = get_collection(collection_name or "documents")
+    collection = get_collection(collection_name or DEFAULT_COLLECTION)
 
     def get_results(question: str):
         start = time.time()
         raw = collection.query(
             query_embeddings=[embed_query(question)],
-            n_results=TOP_K,
+            n_results=EVAL_TOP_K,
             include=["documents", "metadatas", "distances"],
         )
         elapsed = time.time() - start
@@ -118,7 +115,7 @@ def _query_get_results():
 
     def get_results(question: str):
         start = time.time()
-        retrieved = retrieve_top_k_cross_corpus(embed_query(question), all_chunks, k=TOP_K)
+        retrieved = retrieve_top_k_cross_corpus(embed_query(question), all_chunks, k=EVAL_TOP_K)
         elapsed = time.time() - start
         results = [_result_row(rank, score, chunk_id, preview, chunk_id_to_source.get(chunk_id, ""))
                    for rank, (score, chunk_id, preview) in enumerate(retrieved, 1)]
@@ -137,7 +134,7 @@ def _faiss_get_results():
     def get_results(question: str):
         start = time.time()
         query_emb = embed_query(question)
-        distances, indices = search_index(index, query_emb, k=TOP_K)
+        distances, indices = search_index(index, query_emb, k=EVAL_TOP_K)
         elapsed = time.time() - start
         results = []
         for rank, (idx, dist) in enumerate(zip(indices, distances), 1):

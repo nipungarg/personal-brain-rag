@@ -10,11 +10,9 @@ Usage:
 
 import sys
 import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from config import DEFAULT_BACKEND, DEFAULT_COLLECTION, DEFAULT_TOP_K, ensure_root_path
+ensure_root_path()
 
 import argparse
 
@@ -31,13 +29,13 @@ def main() -> None:
     parser.add_argument(
         "--backend",
         choices=["chroma", "query", "faiss"],
-        default="chroma",
-        help="RAG backend (default: chroma).",
+        default=DEFAULT_BACKEND,
+        help="RAG backend.",
     )
     parser.add_argument("--collection", default=None, help="Chroma collection (backend=chroma).")
-    parser.add_argument("--rerank", type=int, default=0, dest="rerank_initial_k", metavar="K", help="If > 0, retrieve K candidates and rerank to top-n (chroma). 0 = no reranking.")
-    parser.add_argument("--no-cache", action="store_false", dest="use_cache", default=True, help="Disable semantic response cache (chroma). Cache is on by default.")
-    parser.add_argument("-n", "--n-results", type=int, default=4, help="Number of chunks to retrieve (default 4).")
+    parser.add_argument("--rerank", type=int, default=0, dest="rerank_initial_k", metavar="K", help="If > 0, retrieve K candidates and rerank (chroma). 0 = no reranking.")
+    parser.add_argument("--no-cache", action="store_false", dest="use_cache", default=True, help="Disable semantic response cache (chroma).")
+    parser.add_argument("-n", "--n-results", type=int, default=DEFAULT_TOP_K, help="Number of chunks to retrieve.")
     args = parser.parse_args()
 
     question = args.question
@@ -53,7 +51,7 @@ def main() -> None:
         out = generate_answer(
             question,
             n_results=args.n_results,
-            collection_name=args.collection,
+            collection_name=args.collection or DEFAULT_COLLECTION,
             rerank_initial_k=args.rerank_initial_k,
             use_cache=args.use_cache,
             return_timings=True,

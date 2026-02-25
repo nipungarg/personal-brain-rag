@@ -1,23 +1,11 @@
-"""Shared LLM call for RAG generation: single place for model, max_tokens, and prompt → parsed answer + sources."""
+"""Shared LLM call for RAG generation: model, max_tokens, prompt → parsed answer + sources."""
 
-import os
 import time
-from pathlib import Path
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
+from config import INPUT_PRICE_PER_1M, LLM_MODEL, MAX_TOKENS, OPENAI_API_KEY, OUTPUT_PRICE_PER_1M, TEMPERATURE
 from .prompt import parse_response
-
-ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
-
-MODEL = "gpt-4o-mini"
-MAX_TOKENS = 1000
-
-# Pricing per 1M tokens (update from https://platform.openai.com/docs/pricing if needed)
-INPUT_PRICE_PER_1M = 0.15
-OUTPUT_PRICE_PER_1M = 0.60
 
 _client = None
 
@@ -26,15 +14,21 @@ def get_client() -> OpenAI:
     """Lazy singleton OpenAI client."""
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        _client = OpenAI(api_key=OPENAI_API_KEY)
     return _client
 
 
-def complete_rag(prompt: str, temperature: float = 0.2) -> dict:
+def reset_client() -> None:
+    """Reset client ref (e.g. on graceful shutdown). Next get_client() will create a new one."""
+    global _client
+    _client = None
+
+
+def complete_rag(prompt: str, temperature: float = TEMPERATURE) -> dict:
     """Send prompt to LLM; return parsed answer, sources, usage, cost, llm_s."""
     t0 = time.perf_counter()
     response = get_client().chat.completions.create(
-        model=MODEL,
+        model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
         max_tokens=MAX_TOKENS,
@@ -46,11 +40,11 @@ def complete_rag(prompt: str, temperature: float = 0.2) -> dict:
     return parsed
 
 
-def complete_rag_stream(prompt: str, temperature: float = 0.2):
+def complete_rag_stream(prompt: str, temperature: float = TEMPERATURE):
     """Stream LLM; yield (delta, None) then (None, parsed_dict) with answer, sources, usage, cost."""
     t0 = time.perf_counter()
     stream = get_client().chat.completions.create(
-        model=MODEL,
+        model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=temperature,
         max_tokens=MAX_TOKENS,

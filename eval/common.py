@@ -1,13 +1,9 @@
 """Shared eval utilities: question loading, hit logic, and snippet for retrieval/generation eval."""
 
 import json
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-QUESTIONS_PATH = ROOT / "eval" / "questions.json"
+from config import QUESTIONS_PATH, ROOT, ensure_root_path
+ensure_root_path()
 
 
 def snippet(text: str, max_len: int = 200) -> str:

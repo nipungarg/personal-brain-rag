@@ -1,5 +1,6 @@
 """Generate RAG answers using FAISS-retrieved context."""
 
+from config import DEFAULT_TOP_K, TEMPERATURE
 from ingest.embedding import embed_query
 from query.prompt import build_prompt
 from query.llm import complete_rag
@@ -16,7 +17,7 @@ def _retrieved_to_context(retrieved: list[tuple[str, str]]) -> list[dict]:
     ]
 
 
-def generate_answer(query: str, n_results: int = 3) -> dict:
+def generate_answer(query: str, n_results: int = DEFAULT_TOP_K) -> dict:
     """
     Retrieve context from FAISS index and generate an answer.
 
@@ -28,7 +29,7 @@ def generate_answer(query: str, n_results: int = 3) -> dict:
     retrieved = retrieve_top_k(query_embedding, chunks, sources, index, k=n_results)
     context = _retrieved_to_context(retrieved)
     prompt = build_prompt(query, context)
-    return complete_rag(prompt, temperature=0.2)
+    return complete_rag(prompt, temperature=TEMPERATURE)
 
 
 if __name__ == "__main__":

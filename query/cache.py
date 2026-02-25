@@ -2,27 +2,11 @@
 
 import json
 import sqlite3
-from pathlib import Path
+from typing import Optional
 
+from config import CACHE_DB, CACHE_SIM_THRESHOLD
 from ingest.embedding import embed_query
-
-ROOT = Path(__file__).resolve().parent.parent
-CACHE_DB = ROOT / "cache.db"
-
-# Minimum cosine similarity (0–1) to return a cached response.
-DEFAULT_THRESHOLD = 0.90
-
-
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Cosine similarity between two vectors."""
-    if not a or not b or len(a) != len(b):
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+from utils.similarity import cosine_similarity
 
 
 def _init_db(conn: sqlite3.Connection) -> None:
@@ -39,7 +23,7 @@ def _init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def get_cached_response(query: str, threshold: float = DEFAULT_THRESHOLD) -> dict | None:
+def get_cached_response(query: str, threshold: float = CACHE_SIM_THRESHOLD) -> Optional[dict]:
     """Return cached {answer, sources} if query embedding similarity >= threshold, else None."""
     conn = sqlite3.connect(CACHE_DB)
     _init_db(conn)
@@ -58,7 +42,7 @@ def get_cached_response(query: str, threshold: float = DEFAULT_THRESHOLD) -> dic
     best_answer = best_sources = None
     for (emb_json, answer, sources_json) in rows:
         cached_emb = json.loads(emb_json)
-        sim = _cosine_similarity(query_emb, cached_emb)
+        sim = cosine_similarity(query_emb, cached_emb)
         if sim > best_sim:
             best_sim = sim
             best_answer = answer

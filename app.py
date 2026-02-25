@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
 """Gradio UI: question input, streaming answer, rerank toggle."""
 
-import sys
 import time
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from config import ensure_root_path
+ensure_root_path()
 
 import gradio as gr
 
+from config import CACHE_SIM_THRESHOLD, DEFAULT_TOP_K, RERANK_K, TEMPERATURE
 from chroma.retrieve import get_relevant_chunks_adaptive
 from query.prompt import build_prompt
 from query.llm import complete_rag_stream
-from query.cache import get_cached_response, set_cached_response, DEFAULT_THRESHOLD
-
-RERANK_K = 20
-N_RESULTS = 4
+from query.cache import get_cached_response, set_cached_response
 
 
 def run_rag(question: str, use_rerank: bool):
@@ -27,7 +22,7 @@ def run_rag(question: str, use_rerank: bool):
         return
     yield "Searching…", "…", "…", "…"
     t0 = time.perf_counter()
-    cached = get_cached_response(question.strip(), threshold=DEFAULT_THRESHOLD)
+    cached = get_cached_response(question.strip(), threshold=CACHE_SIM_THRESHOLD)
     if cached is not None:
         total_s = time.perf_counter() - t0
         answer = cached.get("answer", "")
@@ -36,17 +31,16 @@ def run_rag(question: str, use_rerank: bool):
         yield answer, sources_str, f"{total_s:.2f} s", "$0.0000"
         return
     rerank_k = RERANK_K if use_rerank else 0
-    result = get_relevant_chunks_adaptive(
+    chunks, _ = get_relevant_chunks_adaptive(
         question.strip(),
-        n_results=N_RESULTS,
+        n_results=DEFAULT_TOP_K,
         rerank_initial_k=rerank_k,
         return_timings=True,
     )
-    chunks, timings = result
     prompt = build_prompt(question.strip(), chunks)
     yield "Generating…", "…", "…", "…"
     accumulated = ""
-    for delta, final in complete_rag_stream(prompt, temperature=0.2):
+    for delta, final in complete_rag_stream(prompt, temperature=TEMPERATURE):
         if delta:
             accumulated += delta
             total_s = time.perf_counter() - t0

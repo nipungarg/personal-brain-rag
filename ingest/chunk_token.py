@@ -3,7 +3,9 @@
 import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-tokenizer = tiktoken.encoding_for_model("text-embedding-3-small")
+from config import CHUNK_OVERLAP, CHUNK_SIZE, EMBEDDING_MODEL
+
+tokenizer = tiktoken.encoding_for_model(EMBEDDING_MODEL)
 
 
 def tik_token_len(text: str) -> int:
@@ -11,12 +13,11 @@ def tik_token_len(text: str) -> int:
     return len(tokenizer.encode(text))
 
 
-# Default splitter: faiss_rag, query, and default chroma use this.
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=100,
+    chunk_size=CHUNK_SIZE,
+    chunk_overlap=CHUNK_OVERLAP,
     length_function=tik_token_len,
-    separators=["\n\n", "\n", " ", ""]
+    separators=["\n\n", "\n", " ", ""],
 )
 
 def chunk_text(text: str) -> list[str]:

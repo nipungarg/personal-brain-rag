@@ -1,6 +1,4 @@
-from pathlib import Path
-
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+from config import DATA_DIR
 
 
 def get_txt_filenames() -> list[str]:

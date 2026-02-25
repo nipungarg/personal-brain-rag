@@ -2,12 +2,12 @@
 
 import re
 import time
+from typing import List, Optional, Tuple, Union
+
+from config import DEFAULT_COLLECTION, RELEVANCE_MAX_DISTANCE, RERANKER_MODEL, RRF_K
 from ingest.embedding import embed_query
 from .client import get_collection
 
-RELEVANCE_MAX_DISTANCE = 1.5  # Max distance for a result to be considered relevant.
-RRF_K = 60  # RRF constant for hybrid; higher k dampens rank differences.
-RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
 _reranker = None
 
 
@@ -20,7 +20,9 @@ def _get_cross_encoder():
     return _reranker
 
 
-def rerank_chunks(query: str, chunks: list[dict], top_k: int, return_scores: bool = False) -> list[dict] | tuple[list[dict], list[float]]:
+def rerank_chunks(
+    query: str, chunks: list, top_k: int, return_scores: bool = False
+) -> Union[List[dict], Tuple[List[dict], List[float]]]:
     """Rerank by cross-encoder; return top_k chunks, or (chunks, scores) if return_scores."""
     if not chunks or top_k <= 0:
         return ([], []) if return_scores else []
@@ -64,15 +66,15 @@ def get_relevant_chunks_adaptive(
     query: str,
     n_results: int = 3,
     max_distance: float = RELEVANCE_MAX_DISTANCE,
-    collection_name: str | None = None,
+    collection_name: Optional[str] = None,
     top_k_dense: int = 20,
     top_k_sparse: int = 20,
     rerank_initial_k: int = 0,
     confidence_threshold: float = RELEVANCE_MAX_DISTANCE,
     return_timings: bool = False,
-) -> list[dict] | tuple[list[dict], dict]:
+) -> Union[List[dict], Tuple[List[dict], dict]]:
     """Keyword-heavy → hybrid; else dense with hybrid fallback if top score weak. Optional return_timings."""
-    coll_name = collection_name or "documents"
+    coll_name = collection_name or DEFAULT_COLLECTION
 
     if _is_keyword_heavy(query):
         return get_relevant_chunks_hybrid(
@@ -155,18 +157,18 @@ def get_relevant_chunks_hybrid(
     query: str,
     n_results: int = 3,
     max_distance: float = RELEVANCE_MAX_DISTANCE,
-    collection_name: str | None = None,
+    collection_name: Optional[str] = None,
     top_k_dense: int = 20,
     top_k_sparse: int = 20,
     rerank_initial_k: int = 0,
     return_timings: bool = False,
-) -> list[dict] | tuple[list[dict], dict]:
+) -> Union[List[dict], Tuple[List[dict], dict]]:
     """Dense + BM25 RRF. Optional rerank, return_timings."""
-    use_reranker = rerank_initial_k > 0
-    from rank_bm25 import BM25Okapi
     import numpy as np
+    from rank_bm25 import BM25Okapi
 
-    collection = get_collection(collection_name or "documents")
+    use_reranker = rerank_initial_k > 0
+    collection = get_collection(collection_name or DEFAULT_COLLECTION)
     all_data = collection.get(include=["documents", "metadatas"])
     ids = all_data["ids"]
     documents = all_data.get("documents") or []

@@ -5,8 +5,7 @@ import re
 import subprocess
 import sys
 
-import eval.common
-from eval.common import ROOT
+from eval.common import ROOT  # side effect: adds project root to sys.path
 
 CONFIGS = [
     {"name": "vault_small", "size": 300, "overlap": 50},

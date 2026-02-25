@@ -2,11 +2,8 @@
 
 import faiss
 
+from config import RELEVANCE_MAX_DISTANCE
 from .store import search_index
-
-# Max L2 distance for a result to be considered relevant.
-# Above this, we return no context so the generator can say "I do not have enough information."
-RELEVANCE_MAX_DISTANCE = 1.5
 
 
 def retrieve_top_k(

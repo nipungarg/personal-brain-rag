@@ -1,10 +1,10 @@
 from pathlib import Path
-import numpy as np
 
 from ingest.chunk_token import chunk_text
 from ingest.clean import clean_text
 from ingest.embedding import embed_query, embed_text
 from ingest.load import get_txt_filenames
+from utils.similarity import cosine_similarity
 
 SNIPPET_LEN = 200
 
@@ -32,18 +32,13 @@ def load_all_chunks() -> list[dict]:
     return all_chunks
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    x, y = np.array(a), np.array(b)
-    return float(np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y)))
-
-
 def retrieve_top_k_cross_corpus(
     query_embedding: list[float],
     all_chunks: list[dict],
     k: int,
 ) -> list[tuple[float, str, str]]:
     """Retrieve top-k across all documents. all_chunks from load_all_chunks(). Returns (score, chunk_id, preview)."""
-    scored = [(_cosine_similarity(query_embedding, c["embedding"]), c["chunk_id"], _preview(c["text"]))
+    scored = [(cosine_similarity(query_embedding, c["embedding"]), c["chunk_id"], _preview(c["text"]))
               for c in all_chunks]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[:k]

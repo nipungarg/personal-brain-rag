@@ -1,7 +1,10 @@
 """Build ChromaDB index from data/ .txt: build_index (default collection), build_index_for_config (named collection + chunk config)."""
 
+from typing import Optional
+
 import chromadb
 
+from config import DEFAULT_COLLECTION
 from ingest.embedding import embed_chunks
 from ingest.metadata import get_metadata_for_chunks
 from ingest.chunk_token import chunk_text, chunk_text_config
@@ -25,8 +28,9 @@ def add_documents(
     collection.add(documents=chunks, embeddings=embeddings, metadatas=metadatas, ids=ids)
 
 
-def build_index(collection_name: str = "documents") -> chromadb.Collection:
+def build_index(collection_name: Optional[str] = None) -> chromadb.Collection:
     """Load all .txt from data/, clean, chunk (default size/overlap), embed; add to ChromaDB. Return collection."""
+    collection_name = collection_name or DEFAULT_COLLECTION
     client = get_client()
     collection = create_collection(client, collection_name)
     for filename in get_txt_filenames():

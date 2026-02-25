@@ -1,21 +1,24 @@
 """Generate RAG answers using ChromaDB-retrieved context."""
 
 import time
+from typing import Optional
+
+from config import CACHE_SIM_THRESHOLD, DEFAULT_TOP_K, TEMPERATURE
 from query.prompt import build_prompt
 from query.llm import complete_rag
-from query.cache import get_cached_response, set_cached_response, DEFAULT_THRESHOLD
+from query.cache import get_cached_response, set_cached_response
 
 from .retrieve import get_relevant_chunks_adaptive
 
 
 def generate_answer(
     query: str,
-    n_results: int = 3,
-    collection_name: str | None = None,
-    temperature: float = 0.2,
+    n_results: int = DEFAULT_TOP_K,
+    collection_name: Optional[str] = None,
+    temperature: float = TEMPERATURE,
     rerank_initial_k: int = 0,
     use_cache: bool = False,
-    cache_threshold: float = DEFAULT_THRESHOLD,
+    cache_threshold: float = CACHE_SIM_THRESHOLD,
     return_timings: bool = False,
 ) -> dict:
     """Adaptive retrieval + optional cache/rerank. Returns answer, sources, cached; optional timings/tokens/cost."""

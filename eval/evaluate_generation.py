@@ -1,16 +1,13 @@
 """Generation evaluation for chroma, query, and faiss backends."""
 
-import eval.common  # noqa: F401 — ensures project root on path
 import argparse
 import statistics
 import time
 
 from utils.logger import log_event
 
-from eval.common import load_questions, check_hit, snippet
-
-TOP_K = 4
-EVAL_TEMPERATURE = 0.0  # Deterministic recall for comparable runs across collections.
+from config import DEFAULT_COLLECTION, EVAL_TEMPERATURE, EVAL_TOP_K
+from eval.common import load_questions, check_hit, snippet  # side effect: project root on path
 
 
 def _log_generation(
@@ -86,7 +83,7 @@ def evaluate_chroma(
     """Evaluate generation for Chroma (adaptive retrieval). collection_name: default 'documents'; use e.g. vault_small for sweep."""
     from chroma.generate import generate_answer
 
-    parts = [collection_name or "documents"]
+    parts = [collection_name or DEFAULT_COLLECTION]
     if rerank_initial_k > 0:
         parts.append(f"rerank({rerank_initial_k})")
     title = f"Chroma: {'+'.join(parts)}"
@@ -94,7 +91,7 @@ def evaluate_chroma(
     def generate_fn(q):
         return generate_answer(
             q,
-            n_results=TOP_K,
+            n_results=EVAL_TOP_K,
             collection_name=collection_name,
             temperature=EVAL_TEMPERATURE,
             rerank_initial_k=rerank_initial_k,
@@ -108,7 +105,7 @@ def evaluate_query() -> None:
     from query.generate import generate_answer
 
     def generate_fn(q):
-        return generate_answer(q, n_results=TOP_K)
+        return generate_answer(q, n_results=EVAL_TOP_K)
 
     _run_generation_eval("query", "Query", generate_fn)
 
@@ -118,7 +115,7 @@ def evaluate_faiss() -> None:
     from faiss_rag.generate import generate_answer
 
     def generate_fn(q):
-        return generate_answer(q, n_results=TOP_K)
+        return generate_answer(q, n_results=EVAL_TOP_K)
 
     _run_generation_eval("faiss", "FAISS", generate_fn)
 
