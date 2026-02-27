@@ -64,4 +64,5 @@ EVAL_TEMPERATURE = float(os.getenv("EVAL_TEMPERATURE", "0.0"))
 
 # --- Server (long-lived service) ---
 SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
-SERVER_PORT = int(os.getenv("SERVER_PORT", "7860"))
+# Use PORT when set (e.g. Render, Heroku); else SERVER_PORT or 7860
+SERVER_PORT = int(os.getenv("PORT") or os.getenv("SERVER_PORT", "7860"))

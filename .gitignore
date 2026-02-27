@@ -1,7 +1,7 @@
 venv/
 .env
 __pycache__/
-chroma_db/
+# chroma_db/
 faiss_db/
 eval/run_log.jsonl
 eval/questions.json

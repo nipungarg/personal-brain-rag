@@ -31,6 +31,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Personal Brain RAG", lifespan=lifespan)
 
+
+@app.get("/health")
+def health():
+    """Liveness/readiness for Render and load balancers."""
+    return {"status": "ok"}
+
+
 app = gr.mount_gradio_app(app, demo, path="/")
 
 
