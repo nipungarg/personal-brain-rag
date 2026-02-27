@@ -1,14 +1,18 @@
 """Generate RAG answers using ChromaDB-retrieved context."""
 
 import time
+import uuid
 from typing import Optional
 
 from config import CACHE_SIM_THRESHOLD, DEFAULT_TOP_K, TEMPERATURE
 from query.prompt import build_prompt
 from query.llm import complete_rag
 from query.cache import get_cached_response, set_cached_response
+from utils.logging_config import get_logger, get_request_id, set_request_id
 
 from .retrieve import get_relevant_chunks_adaptive
+
+_log = get_logger(__name__)
 
 
 def generate_answer(
@@ -22,6 +26,34 @@ def generate_answer(
     return_timings: bool = False,
 ) -> dict:
     """Adaptive retrieval + optional cache/rerank. Returns answer, sources, cached; optional timings/tokens/cost."""
+    if get_request_id() is None:
+        set_request_id(str(uuid.uuid4())[:8])
+    try:
+        return _generate_answer_impl(
+            query=query,
+            n_results=n_results,
+            collection_name=collection_name,
+            temperature=temperature,
+            rerank_initial_k=rerank_initial_k,
+            use_cache=use_cache,
+            cache_threshold=cache_threshold,
+            return_timings=return_timings,
+        )
+    except Exception as e:
+        _log.exception("generate_error", extra={"error": str(e)})
+        raise
+
+
+def _generate_answer_impl(
+    query: str,
+    n_results: int = DEFAULT_TOP_K,
+    collection_name: Optional[str] = None,
+    temperature: float = TEMPERATURE,
+    rerank_initial_k: int = 0,
+    use_cache: bool = False,
+    cache_threshold: float = CACHE_SIM_THRESHOLD,
+    return_timings: bool = False,
+) -> dict:
     def _raw_generate(q: str, with_timings: bool = False) -> dict:
         result = get_relevant_chunks_adaptive(
             q,
@@ -50,6 +82,7 @@ def generate_answer(
         cached = get_cached_response(query, threshold=cache_threshold)
         if cached is not None:
             total_s = time.perf_counter() - t0
+            _log.info("cache_hit", extra={"total_s": total_s})
             return {
                 **cached,
                 "cached": True,

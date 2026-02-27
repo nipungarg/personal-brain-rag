@@ -6,9 +6,18 @@ from typing import List, Optional, Tuple, Union
 
 from config import DEFAULT_COLLECTION, RELEVANCE_MAX_DISTANCE, RERANKER_MODEL, RRF_K
 from ingest.embedding import embed_query
+from utils.logging_config import get_logger
 from .client import get_collection
 
 _reranker = None
+_log = get_logger(__name__)
+
+
+def _log_retrieval_timings(embed_s: float, retrieval_s: float) -> None:
+    _log.info(
+        "retrieval_complete",
+        extra={"embed_s": float(embed_s or 0), "retrieval_s": float(retrieval_s or 0)},
+    )
 
 
 def _get_cross_encoder():
@@ -127,6 +136,7 @@ def get_relevant_chunks_adaptive(
             )
             out_embed = embed_s
             out_retrieval = retrieval_s + ht["embed_s"] + ht["retrieval_s"]
+            _log_retrieval_timings(out_embed, out_retrieval)
             return chunks, {"embed_s": out_embed, "retrieval_s": out_retrieval}
         return get_relevant_chunks_hybrid(
             query,
@@ -149,6 +159,7 @@ def get_relevant_chunks_adaptive(
         chunks, _ = rerank_chunks(query, chunks, n_results, return_scores=True)
     if return_timings:
         retrieval_s = time.perf_counter() - t0
+        _log_retrieval_timings(embed_s, retrieval_s)
         return chunks, {"embed_s": embed_s, "retrieval_s": retrieval_s}
     return chunks
 
@@ -174,6 +185,8 @@ def get_relevant_chunks_hybrid(
     documents = all_data.get("documents") or []
     metadatas = all_data.get("metadatas") or [{}] * len(ids)
     if not documents:
+        if return_timings:
+            _log_retrieval_timings(0.0, 0.0)
         return ([], {"embed_s": 0.0, "retrieval_s": 0.0}) if return_timings else []
 
     tokenized_corpus = [_tokenize(d or "") for d in documents]
@@ -218,5 +231,6 @@ def get_relevant_chunks_hybrid(
         chunks, _ = rerank_chunks(query, chunks, n_results, return_scores=True)
     if return_timings:
         retrieval_s = time.perf_counter() - t0
+        _log_retrieval_timings(embed_s, retrieval_s)
         return chunks, {"embed_s": embed_s, "retrieval_s": retrieval_s}
     return chunks

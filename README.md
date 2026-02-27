@@ -266,3 +266,4 @@ python -m eval.chroma_chunk_sweep
 - **Semantic cache** (Chroma): responses are cached by query embedding similarity (default threshold 0.90); paraphrased questions can reuse a cached answer.
 - **Adaptive retrieval** (Chroma): keyword-heavy queries use hybrid (dense + BM25); otherwise dense with optional hybrid fallback if top score is low.
 - **Stateless + graceful shutdown**: Vault data lives only in persistent storage (Chroma dir, cache DB, FAISS files). `run_server.py` registers signal handlers and closes client refs on shutdown so the service can be stopped and restarted cleanly.
+- **Structured logging**: JSON lines to stderr (and optionally to `LOG_FILE`). Each request gets a short **request_id** (first 8 chars of UUID); logs include retrieval latency (`embed_s`, `retrieval_s`), LLM latency (`llm_s`), cache hit, errors with traceback. Configure level via `LOG_LEVEL` (default `INFO`).

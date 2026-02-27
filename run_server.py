@@ -8,6 +8,9 @@ cache DB, FAISS). Run as cattle—kill and restart anytime without data loss.
 from config import ensure_root_path, SERVER_HOST, SERVER_PORT
 ensure_root_path()
 
+from utils.logging_config import configure_logging
+configure_logging()
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

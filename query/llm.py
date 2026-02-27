@@ -5,7 +5,10 @@ import time
 from openai import OpenAI
 
 from config import INPUT_PRICE_PER_1M, LLM_MODEL, MAX_TOKENS, OPENAI_API_KEY, OUTPUT_PRICE_PER_1M, TEMPERATURE
+from utils.logging_config import get_logger
 from .prompt import parse_response
+
+_log = get_logger(__name__)
 
 _client = None
 
@@ -37,6 +40,15 @@ def complete_rag(prompt: str, temperature: float = TEMPERATURE) -> dict:
     parsed = parse_response(content)
     parsed["llm_s"] = time.perf_counter() - t0
     _attach_usage(response, parsed)
+    _log.info(
+        "llm_complete",
+        extra={
+            "llm_s": parsed["llm_s"],
+            "prompt_tokens": parsed.get("prompt_tokens", 0),
+            "completion_tokens": parsed.get("completion_tokens", 0),
+            "cost_usd": parsed.get("cost_usd", 0.0),
+        },
+    )
     return parsed
 
 
@@ -71,6 +83,15 @@ def complete_rag_stream(prompt: str, temperature: float = TEMPERATURE):
         parsed.setdefault("completion_tokens", 0)
         parsed.setdefault("total_tokens", 0)
         parsed.setdefault("cost_usd", 0.0)
+    _log.info(
+        "llm_complete",
+        extra={
+            "llm_s": parsed["llm_s"],
+            "prompt_tokens": parsed.get("prompt_tokens", 0),
+            "completion_tokens": parsed.get("completion_tokens", 0),
+            "cost_usd": parsed.get("cost_usd", 0.0),
+        },
+    )
     yield None, parsed
 
 

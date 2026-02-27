@@ -10,11 +10,17 @@ Usage:
 
 import sys
 import time
+import uuid
 
 from config import DEFAULT_BACKEND, DEFAULT_COLLECTION, DEFAULT_TOP_K, ensure_root_path
 ensure_root_path()
 
+from utils.logging_config import configure_logging, get_logger, set_request_id
+configure_logging()
+
 import argparse
+
+_log = get_logger(__name__)
 
 
 def main() -> None:
@@ -45,28 +51,50 @@ def main() -> None:
         print("No question provided.", file=sys.stderr)
         sys.exit(1)
 
+    request_id = str(uuid.uuid4())[:8]
+    set_request_id(request_id)
+    _log.info(
+        "request_start",
+        extra={"question_preview": question[:80], "backend": args.backend},
+    )
     t0 = time.perf_counter()
-    if args.backend == "chroma":
-        from chroma.generate import generate_answer
-        out = generate_answer(
-            question,
-            n_results=args.n_results,
-            collection_name=args.collection or DEFAULT_COLLECTION,
-            rerank_initial_k=args.rerank_initial_k,
-            use_cache=args.use_cache,
-            return_timings=True,
-        )
-    elif args.backend == "query":
-        from query.generate import generate_answer
-        out = generate_answer(question, n_results=args.n_results)
-        out.setdefault("cached", False)
-    else:
-        from faiss_rag.generate import generate_answer
-        out = generate_answer(question, n_results=args.n_results)
-        out.setdefault("cached", False)
+    try:
+        if args.backend == "chroma":
+            from chroma.generate import generate_answer
+            out = generate_answer(
+                question,
+                n_results=args.n_results,
+                collection_name=args.collection or DEFAULT_COLLECTION,
+                rerank_initial_k=args.rerank_initial_k,
+                use_cache=args.use_cache,
+                return_timings=True,
+            )
+        elif args.backend == "query":
+            from query.generate import generate_answer
+            out = generate_answer(question, n_results=args.n_results)
+            out.setdefault("cached", False)
+        else:
+            from faiss_rag.generate import generate_answer
+            out = generate_answer(question, n_results=args.n_results)
+            out.setdefault("cached", False)
+    except Exception as e:
+        _log.exception("request_error", extra={"error": str(e)})
+        set_request_id(None)
+        raise
     total_s = time.perf_counter() - t0
     if "total_s" not in out:
         out["total_s"] = total_s
+    _log.info(
+        "request_complete",
+        extra={
+            "total_s": out["total_s"],
+            "cached": out.get("cached", False),
+            "embed_s": out.get("embed_s"),
+            "retrieval_s": out.get("retrieval_s"),
+            "llm_s": out.get("llm_s"),
+            "cost_usd": out.get("cost_usd"),
+        },
+    )
 
     # --- Metadata ---
     print("\n---")
