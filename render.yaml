@@ -1,4 +1,5 @@
 # Render Blueprint: deploy the RAG Gradio app as a Web Service.
+# Project/workspace name: personal-brain-rag.
 # Docs: https://render.com/docs/blueprint-spec
 #
 # 1. Connect this repo in Render Dashboard.
@@ -6,29 +7,34 @@
 # 3. Optional: add a Persistent Disk and set DISK_PATH; then set CHROMA_PERSIST_DIR, etc. to paths on the disk so data survives deploys.
 # 4. Deploy.
 
-services:
-  - type: web
-    name: personal-brain-rag
-    runtime: python
-    region: oregon  # or singapore, frankfurt
-    plan: free  # or starter for persistent disk
+projects:
+  - name: personal-brain-rag
+    environments:
+      - name: production
+        services:
+          - type: web
+            name: personal-brain-rag
+            runtime: python
+            region: oregon  # or singapore, frankfurt
+            plan: free  # or starter for persistent disk
 
-    buildCommand: pip install -r requirements.txt
-    startCommand: python run_server.py
+            buildCommand: pip install -r requirements.txt
+            # Use PORT from Render env so the service binds correctly (required for port detection)
+            startCommand: uvicorn run_server:app --host 0.0.0.0 --port $PORT
 
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.11"  # match local; Render uses this for build
-      - key: OPENAI_API_KEY
-        sync: false  # set manually as Secret in Dashboard
-      - key: SERVER_HOST
-        value: 0.0.0.0
-      # PORT is set by Render automatically
-      - key: LOG_LEVEL
-        value: INFO
+            envVars:
+              - key: PYTHON_VERSION
+                value: "3.11.11"  # match local; Render uses this for build
+              - key: OPENAI_API_KEY
+                sync: false  # set manually as Secret in Dashboard
+              - key: SERVER_HOST
+                value: 0.0.0.0
+              # PORT is set by Render automatically
+              - key: LOG_LEVEL
+                value: INFO
 
-    # Optional: uncomment and attach a Persistent Disk in Dashboard, then set CHROMA_PERSIST_DIR to /data/chroma_db etc.
-    # disk:
-    #   name: rag-data
-    #   mountPath: /data
-    #   sizeGB: 1
+            # Optional: uncomment and attach a Persistent Disk in Dashboard, then set CHROMA_PERSIST_DIR to /data/chroma_db etc.
+            # disk:
+            #   name: rag-data
+            #   mountPath: /data
+            #   sizeGB: 1
