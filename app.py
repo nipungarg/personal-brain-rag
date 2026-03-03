@@ -13,16 +13,18 @@ configure_logging()
 import gradio as gr
 
 from config import CACHE_SIM_THRESHOLD, DEFAULT_TOP_K, RERANK_K, TEMPERATURE
-from chroma.retrieve import get_relevant_chunks_adaptive
-from query.prompt import build_prompt
-from query.llm import complete_rag_stream
-from query.cache import get_cached_response, set_cached_response
 
 _log = get_logger(__name__)
 
 
 def run_rag(question: str, use_rerank: bool):
     """Retrieve, build prompt, stream LLM; yield (answer, sources, time, cost). Uses semantic cache on hit."""
+    # Defer heavy imports so server can bind to PORT before loading chroma/query (fixes Render startup)
+    from chroma.retrieve import get_relevant_chunks_adaptive
+    from query.prompt import build_prompt
+    from query.llm import complete_rag_stream
+    from query.cache import get_cached_response, set_cached_response
+
     if not (question or "").strip():
         yield "", "", "", ""
         return
