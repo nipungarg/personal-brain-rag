@@ -2,10 +2,10 @@
 
 from openai import OpenAI
 
-from config import EMBEDDING_MODEL, OPENAI_API_KEY
+from config import EMBEDDING_MODEL, OPENAI_API_KEY, OPENAI_TIMEOUT
 from .chunk_token import chunk_text
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY, timeout=OPENAI_TIMEOUT)
 
 def embed_text(text: str) -> list[list[float]]:
     """Embed all chunks of text (using default chunk_text). Returns list of embedding vectors."""

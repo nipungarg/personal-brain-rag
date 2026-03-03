@@ -4,7 +4,15 @@ import time
 
 from openai import OpenAI
 
-from config import INPUT_PRICE_PER_1M, LLM_MODEL, MAX_TOKENS, OPENAI_API_KEY, OUTPUT_PRICE_PER_1M, TEMPERATURE
+from config import (
+    INPUT_PRICE_PER_1M,
+    LLM_MODEL,
+    MAX_TOKENS,
+    OPENAI_API_KEY,
+    OPENAI_TIMEOUT,
+    OUTPUT_PRICE_PER_1M,
+    TEMPERATURE,
+)
 from utils.logging_config import get_logger
 from .prompt import parse_response
 
@@ -17,7 +25,7 @@ def get_client() -> OpenAI:
     """Lazy singleton OpenAI client."""
     global _client
     if _client is None:
-        _client = OpenAI(api_key=OPENAI_API_KEY)
+        _client = OpenAI(api_key=OPENAI_API_KEY, timeout=OPENAI_TIMEOUT)
     return _client
 
 

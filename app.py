@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Gradio UI: question input, streaming answer, rerank toggle."""
 
+import concurrent.futures
 import time
 import uuid
 
@@ -12,7 +13,7 @@ configure_logging()
 
 import gradio as gr
 
-from config import CACHE_SIM_THRESHOLD, DEFAULT_TOP_K, RERANK_K, TEMPERATURE
+from config import CACHE_SIM_THRESHOLD, DEFAULT_TOP_K, RERANK_K, RETRIEVAL_TIMEOUT, TEMPERATURE
 
 _log = get_logger(__name__)
 
@@ -37,7 +38,9 @@ def run_rag(question: str, use_rerank: bool):
     yield "Searching…", "…", "…", "…"
     t0 = time.perf_counter()
     try:
+        _log.info("cache_check_start", extra={})
         cached = get_cached_response(question.strip(), threshold=CACHE_SIM_THRESHOLD)
+        _log.info("cache_check_done", extra={"cached": cached is not None})
         if cached is not None:
             total_s = time.perf_counter() - t0
             _log.info("cache_hit", extra={"total_s": total_s})
@@ -47,18 +50,34 @@ def run_rag(question: str, use_rerank: bool):
             yield answer, sources_str, f"{total_s:.2f} s", "$0.0000"
             return
         rerank_k = RERANK_K if use_rerank else 0
-        chunks, timings = get_relevant_chunks_adaptive(
-            question.strip(),
-            n_results=DEFAULT_TOP_K,
-            rerank_initial_k=rerank_k,
-            return_timings=True,
-        )
+        _log.info("retrieval_start", extra={"timeout_s": RETRIEVAL_TIMEOUT})
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(
+                get_relevant_chunks_adaptive,
+                question.strip(),
+                n_results=DEFAULT_TOP_K,
+                rerank_initial_k=rerank_k,
+                return_timings=True,
+            )
+            try:
+                chunks, timings = future.result(timeout=RETRIEVAL_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                _log.exception("retrieval_timeout", extra={"timeout_s": RETRIEVAL_TIMEOUT})
+                total_s = time.perf_counter() - t0
+                yield (
+                    f"Retrieval timed out after {RETRIEVAL_TIMEOUT}s. On Render free tier, the first query can be very slow if chroma_db is large. Try again once, or reduce the size of your committed chroma_db.",
+                    "—",
+                    f"{total_s:.1f} s",
+                    "—",
+                )
+                return
         _log.info(
             "retrieval_done",
             extra={"embed_s": timings["embed_s"], "retrieval_s": timings["retrieval_s"]},
         )
         prompt = build_prompt(question.strip(), chunks)
         yield "Generating…", "…", "…", "…"
+        _log.info("llm_start", extra={})
         accumulated = ""
         for delta, final in complete_rag_stream(prompt, temperature=TEMPERATURE):
             if delta:
@@ -91,7 +110,10 @@ def run_rag(question: str, use_rerank: bool):
 
 with gr.Blocks(title="Personal Brain RAG") as demo:
     gr.Markdown("# 🧠 Personal Brain (RAG Vault)")
-    gr.Markdown("Ask questions about your indexed documents. Toggle **Use rerank** to rerank retrieval with a cross-encoder.")
+    gr.Markdown(
+        "Ask questions about your indexed documents. Toggle **Use rerank** to rerank retrieval with a cross-encoder. "
+        "**Tip:** Leave *Use rerank* unchecked for the first question (faster); the reranker model loads on first use and can take 1–2 min."
+    )
     with gr.Row():
         question = gr.Textbox(
             label="Question",

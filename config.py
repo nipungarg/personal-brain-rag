@@ -57,6 +57,10 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "0.2"))
 INPUT_PRICE_PER_1M = float(os.getenv("INPUT_PRICE_PER_1M", "0.15"))
 OUTPUT_PRICE_PER_1M = float(os.getenv("OUTPUT_PRICE_PER_1M", "0.60"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+# Timeout in seconds for OpenAI API calls (avoids hanging on slow networks, e.g. Render)
+OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "120"))
+# Timeout for retrieval (Chroma first load can be very slow on Render if chroma_db is large)
+RETRIEVAL_TIMEOUT = int(os.getenv("RETRIEVAL_TIMEOUT", "90"))
 
 # --- Eval ---
 EVAL_TOP_K = int(os.getenv("EVAL_TOP_K", "4"))
